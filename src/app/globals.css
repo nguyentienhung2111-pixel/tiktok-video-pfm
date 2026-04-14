@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #8b5cf6;
+  --primary-hover: #7c3aed;
+  --bg-main: #0b0e14;
+  --bg-sidebar: #1e1b4b;
+  --card-bg: #161b22;
+  --header-bg: rgba(11, 14, 20, 0.8);
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --border-color: #30363d;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --accent-purple: #c084fc;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-main);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Base Styles for Components */
+.card-premium {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 1.25rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-premium:hover {
+  border-color: var(--primary);
+  transform: translateY(-2px);
+}
+
+/* Table Specific Styles */
+.sticky-col {
+  position: sticky;
+  z-index: 10;
+  background: var(--card-bg);
+}
+
+.sticky-shadow {
+  border-right: 1px solid var(--border-color) !important;
+}

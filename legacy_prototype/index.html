@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TikTok Video Performance - DECOCO</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <aside>
+        <div class="logo">
+            <div class="logo-icon"><i data-lucide="sparkles" style="color: white; width: 18px;"></i></div>
+            <span>DECOCO</span>
+        </div>
+        
+        <nav>
+            <div class="nav-section-label">MENU CHÍNH</div>
+            <ul>
+                <li><a href="#" class="nav-link active" data-page="overall"><i data-lucide="layout-grid"></i> Dashboard</a></li>
+                <li><a href="#" class="nav-link" data-page="content"><i data-lucide="file-text"></i> Thương hiệu</a></li>
+                <li><a href="#" class="nav-link" data-page="booking"><i data-lucide="users"></i> KOC / Affiliate</a></li>
+                <li><a href="#" class="nav-link" data-page="guideline"><i data-lucide="book-open"></i> Tag Guideline</a></li>
+            </ul>
+
+            <div class="nav-section-label">QUẢN TRỊ</div>
+            <ul>
+                <li><a href="#" class="nav-link" data-page="upload"><i data-lucide="upload-cloud"></i> Upload dữ liệu</a></li>
+                <li><a href="#" class="nav-link" data-page="admin"><i data-lucide="settings"></i> Cài đặt</a></li>
+            </ul>
+        </nav>
+
+        <div class="user-sidebar-profile">
+            <div class="avatar" id="sidebar-avatar">TH</div>
+            <div style="flex: 1;">
+                <div style="font-size: 0.85rem; font-weight: 600;" id="sidebar-user-name">Nguyễn Tiến Hưng</div>
+                <div style="font-size: 0.7rem; color: var(--text-muted);" id="sidebar-user-role">Quản trị viên</div>
+            </div>
+            <i data-lucide="log-out" style="width: 16px; cursor: pointer; color: var(--text-muted);"></i>
+        </div>
+    </aside>
+
+    <main id="app-root">
+        <header>
+            <div class="header-title">
+                <h1 id="page-title">Xin chào, Nguyễn Tiến Hưng 👋</h1>
+                <p id="page-subtitle" style="font-size: 0.9rem; color: var(--text-muted); margin-top: 0.25rem;">Theo dõi hiệu suất TikTok của bạn tại đây.</p>
+            </div>
+            <div class="header-right">
+                <div class="header-actions">
+                    <button class="btn btn-outline" style="border-radius: 2rem;"><i data-lucide="calendar"></i> 7 ngày qua</button>
+                    <button class="btn btn-primary" id="btn-export" style="border-radius: 2rem;"><i data-lucide="share"></i> Xuất báo cáo</button>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.75rem; padding-left: 1.5rem; border-left: 1px solid var(--border-color);">
+                    <div class="avatar" style="width: 32px; height: 32px; background: #4c1d95;">NH</div>
+                    <span style="font-size: 0.9rem; font-weight: 500;">Hưng Nguyễn</span>
+                </div>
+            </div>
+        </header>
+
+        <section id="page-content" class="content-wrapper animate-fade">
+            <!-- Dynamic Content -->
+        </section>
+    </main>
+
+    <!-- Modal Container -->
+    <div class="modal-overlay" id="tag-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center;">
+        <div style="background: var(--card-bg); width: 450px; padding: 2rem; border-radius: 1.5rem; border: 1px solid var(--border-color);">
+            <h2 style="margin-bottom: 1.5rem;">Gắn Tag Video</h2>
+            <div id="tag-selection-grid" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 2rem;"></div>
+            <div style="display: flex; justify-content: flex-end; gap: 1rem;">
+                <button class="btn btn-outline" id="btn-cancel-tag">Hủy</button>
+                <button class="btn btn-primary" id="btn-save-tag">Lưu</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>lucide.createIcons();</script>
+</body>
+</html>
