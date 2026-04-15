@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { TrendingUp, TrendingDown, UserCheck, FileDown, Loader2, Star, Users } from 'lucide-react';
+import { TrendingUp, TrendingDown, UserCheck, FileDown, Loader2, Star, Users, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { Video, Profile } from '@/types';
@@ -33,9 +33,13 @@ export default function BookingTeamPage() {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS);
   const [date, setDate] = useState<DateRange | undefined>({
-    from: subDays(startOfToday(), 14),
+    from: subDays(startOfToday(), 365), 
     to: startOfToday(),
   });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
+  const [paginatedVideos, setPaginatedVideos] = useState<Video[]>([]);
 
   const dashboardRef = useRef<HTMLDivElement>(null);
 
@@ -71,8 +75,24 @@ export default function BookingTeamPage() {
         query = query.or(`video_title.ilike.%${filters.search}%,creator_name.ilike.%${filters.search}%`);
       }
 
-      const { data: videoData, error: videoError } = await query;
+      // Fetch ALL for summary/leaderboards (limit to 5000)
+      const { data: summaryData, error: summaryError } = await query.limit(5000);
+      if (summaryError) throw summaryError;
+      setVideos((summaryData as Video[]) || []);
+
+      // Fetch Paginated for table
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      
+      const { data: videoData, error: videoError, count } = await query
+        .order('gmv', { ascending: false })
+        .range(from, to)
+        .select('*', { count: 'exact' });
+        
       if (videoError) throw videoError;
+
+      if (count !== null) setTotalCount(count);
+      setPaginatedVideos((videoData as Video[]) || []);
 
       const { data: userData, error: userError } = await supabase
         .from('profiles')
@@ -80,14 +100,13 @@ export default function BookingTeamPage() {
         .eq('is_active', true);
       if (userError) throw userError;
 
-      setVideos((videoData as Video[]) || []);
       setUsers((userData as Profile[]) || []);
     } catch (error) {
       console.error('Lỗi khi tải dữ liệu KOC:', error);
     } finally {
       setLoading(false);
     }
-  }, [date, filters]);
+  }, [date, filters, page, pageSize]);
 
   useEffect(() => {
     fetchData();
@@ -153,7 +172,7 @@ export default function BookingTeamPage() {
   const scorecards = [
     { label: 'GMV từ KOC', value: formatCurrency(totalGMV), change: '+8.2%', up: true },
     { label: 'Đơn hàng KOC', value: formatNumber(totalOrders), change: '+4.5%', up: true },
-    { label: 'Số KOC đã lên clip', value: new Set(videos.map(v => v.creator_id)).size.toString(), change: '+2', up: true },
+    { label: 'Số KOC đã lên clip', value: totalKOCs.toString(), change: '+2', up: true },
     { label: 'Tổng lượt xem KOC', value: formatNumber(totalViews), change: '+12.1%', up: true },
   ];
 
@@ -236,28 +255,74 @@ export default function BookingTeamPage() {
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-8 duration-1000">
           <h2 className="text-xl font-black flex items-center gap-2">
             <UserCheck className="w-5 h-5 text-purple-500" />
-            Chi tiết video từ KOC ({videos.length})
+            Chi tiết video từ KOC ({totalCount})
           </h2>
+          
           {loading ? (
-             <div className="h-64 flex flex-col items-center justify-center border border-[#30363d] rounded-2xl bg-[#161b22] gap-4">
-                <Loader2 className="animate-spin h-8 w-8 text-primary" />
-                <p className="text-sm text-[#94a3b8] uppercase font-bold tracking-tighter">Đang tải dữ liệu KOC...</p>
-             </div>
-          ) : videos.length === 0 ? (
+            <div className="h-48 flex items-center justify-center border border-[#30363d] rounded-2xl bg-[#161b22]">
+              <Loader2 className="animate-spin h-8 w-8 text-primary" />
+            </div>
+          ) : paginatedVideos.length === 0 ? (
             <Card className="border-[#30363d] bg-[#161b22] border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
-                  <UserCheck className="h-8 w-8 text-muted-foreground" />
-                </div>
-                <p className="text-lg font-bold">Chưa có dữ liệu KOC thỏa mãn lọc</p>
-                <p className="text-sm text-muted-foreground max-w-xs mx-auto mt-2">Thay đổi lọc hoặc upload thêm dữ liệu nguồn 'KOC'</p>
+              <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+                <p className="text-muted-foreground">Không tìm thấy video KOC nào.</p>
                 <Button variant="outline" className="mt-6 border-[#30363d]" onClick={() => setFilters(INITIAL_FILTERS)}>
-                  Xóa tất cả bộ lọc
+                   Xóa tất cả bộ lọc
                 </Button>
               </CardContent>
             </Card>
           ) : (
-            <VideoTable videos={videos} users={users} onRefresh={fetchData} />
+            <>
+              <VideoTable videos={paginatedVideos} users={users} onRefresh={fetchData} />
+
+              {/* Pagination UI */}
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-4 py-4 px-2 border-t border-[#30363d] export-ignore">
+                <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                   {(page - 1) * pageSize + 1} - {Math.min(page * pageSize, totalCount)} của {totalCount} video
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <select 
+                    value={pageSize} 
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setPage(1);
+                    }}
+                    className="bg-[#161b22] border border-[#30363d] text-xs font-bold py-1.5 px-3 rounded-lg focus:outline-none appearance-none pr-8 relative cursor-pointer hover:border-primary/50 transition-colors"
+                  >
+                    <option value={10}>10/Trang</option>
+                    <option value={20}>20/Trang</option>
+                    <option value={50}>50/Trang</option>
+                  </select>
+
+                  <div className="flex items-center gap-1">
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="h-8 w-8 border-[#30363d] bg-transparent hover:bg-primary/10 disabled:opacity-30"
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    
+                    <span className="text-xs font-bold text-foreground px-2">
+                       Trang {page} / {Math.ceil(totalCount / pageSize)}
+                    </span>
+
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="h-8 w-8 border-[#30363d] bg-transparent hover:bg-primary/10 disabled:opacity-30"
+                      onClick={() => setPage(p => p + 1)}
+                      disabled={page >= Math.ceil(totalCount / pageSize)}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>
