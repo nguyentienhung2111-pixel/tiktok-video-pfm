@@ -2,7 +2,8 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 import {
   LayoutGrid,
   FileText,
@@ -39,6 +40,13 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    router.push('/login');
+    router.refresh();
+  }
 
   return (
     <aside className="w-[260px] bg-[#1e1b4b] text-white p-8 flex flex-col fixed h-screen z-[100]">
@@ -91,7 +99,11 @@ export default function Sidebar() {
           <div className="text-[0.85rem] font-semibold">Admin DECOCO</div>
           <div className="text-[0.7rem] text-[#94a3b8]">Quản trị viên</div>
         </div>
-        <button className="text-[#94a3b8] hover:text-white transition-colors">
+        <button
+          onClick={handleSignOut}
+          title="Đăng xuất"
+          className="text-[#94a3b8] hover:text-red-400 transition-colors"
+        >
           <LogOut className="w-4" />
         </button>
       </div>
