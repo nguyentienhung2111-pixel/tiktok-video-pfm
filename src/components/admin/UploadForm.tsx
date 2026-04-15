@@ -79,10 +79,7 @@ const COLUMN_MAPPING: Record<string, string | undefined> = {
   'gmv': 'gmv',
   'views': 'views',
   'orders': 'orders',
-  'Sản phẩm': 'product_name',
-  'Đơn hàng': 'orders',
   'Tên nhà sáng tạo': 'creator_name',
-  'ID video': 'video_id',
   'Ngày': 'published_at',
 };
 
