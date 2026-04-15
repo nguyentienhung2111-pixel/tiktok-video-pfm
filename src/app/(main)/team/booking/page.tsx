@@ -167,6 +167,8 @@ export default function BookingTeamPage() {
   const formatCurrency = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
   const formatNumber = (val: number) => new Intl.NumberFormat('vi-VN').format(val);
 
+  const totalKOCs = new Set(videos.map(v => v.creator_id)).size;
+
   const scorecards = [
     { label: 'GMV từ KOC', value: formatCurrency(totalGMV), change: '+8.2%', up: true },
     { label: 'Đơn hàng KOC', value: formatNumber(totalOrders), change: '+4.5%', up: true },
