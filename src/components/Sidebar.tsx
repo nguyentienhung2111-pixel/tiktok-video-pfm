@@ -1,111 +1,150 @@
 'use client';
 
-import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
-  LayoutGrid,
-  FileText,
-  Users,
-  BookOpen,
-  UploadCloud,
-  Settings,
-  Sparkles,
-  LogOut,
-  Package,
-  Tag,
-  UserCog
+  LayoutDashboard, Tag, BookOpen, Upload, Package,
+  Tags, Users, Settings, LogOut, Tv, UserCheck
 } from 'lucide-react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { cn } from '@/lib/utils';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
-
-const navItems = [
-  { label: 'MENU CHÍNH', type: 'label' },
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutGrid },
-  { label: 'Thương hiệu', href: '/team/content', icon: FileText },
-  { label: 'KOC / Affiliate', href: '/team/booking', icon: Users },
-  { label: 'Tag Guideline', href: '/guideline', icon: BookOpen },
-  { label: 'QUẢN TRỊ', type: 'label' },
-  { label: 'Upload dữ liệu', href: '/admin/upload', icon: UploadCloud },
-  { label: 'Sản phẩm', href: '/admin/products', icon: Package },
-  { label: 'Quản lý Tag', href: '/admin/tags', icon: Tag },
-  { label: 'Tài khoản', href: '/admin/accounts', icon: UserCog },
-  { label: 'Cài đặt', href: '/admin/settings', icon: Settings },
+const mainMenu = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/team/content', label: 'Thương hiệu', icon: Tv },
+  { href: '/team/booking', label: 'KOC / Affiliate', icon: UserCheck },
+  { href: '/guideline', label: 'Tag Guideline', icon: BookOpen },
 ];
 
-export default function Sidebar() {
+const adminMenu = [
+  { href: '/admin/upload', label: 'Upload dữ liệu', icon: Upload },
+  { href: '/admin/products', label: 'Sản phẩm', icon: Package },
+  { href: '/admin/tags', label: 'Quản lý Tag', icon: Tags },
+  { href: '/admin/accounts', label: 'Tài khoản', icon: Users },
+  { href: '/admin/settings', label: 'Cài đặt', icon: Settings },
+];
+
+interface SidebarProps {
+  user?: { display_name: string; role: string } | null;
+}
+
+export default function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
-  async function handleSignOut() {
+  const handleSignOut = async () => {
     await supabase.auth.signOut();
     router.push('/login');
     router.refresh();
-  }
+  };
+
+  const initials = user?.display_name
+    ? user.display_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+    : 'U';
+
+  const roleLabel = {
+    admin: 'Quản trị viên',
+    leader_content: 'Leader Content',
+    leader_booking: 'Leader Booking',
+    staff_content: 'Nhân viên Content',
+    staff_booking: 'Nhân viên Booking',
+  }[user?.role || 'staff_content'] || 'Nhân viên';
 
   return (
-    <aside className="w-[260px] bg-[#1e1b4b] text-white p-8 flex flex-col fixed h-screen z-[100]">
-      <div className="flex items-center gap-3 text-xl font-bold mb-10 pl-2">
-        <div className="w-8 h-8 bg-gradient-to-br from-[#8b5cf6] to-[#c084fc] rounded-lg flex items-center justify-center">
-          <Sparkles className="text-white w-[18px]" />
+    <aside className="fixed left-0 top-0 z-40 h-screen w-60 bg-card border-r border-border flex flex-col">
+      {/* Logo */}
+      <div className="flex items-center gap-3 px-6 py-5">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
+          <Tv className="h-5 w-5 text-primary-foreground" />
         </div>
-        <span>DECOCO</span>
+        <div>
+          <p className="text-sm font-bold text-foreground">DECOCO</p>
+          <p className="text-[11px] text-muted-foreground">Analytics</p>
+        </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto">
-        <ul>
-          {navItems.map((item, idx) => {
-            if (item.type === 'label') {
-              return (
-                <li key={idx} className="text-[0.7rem] text-[#94a3b8] font-bold uppercase tracking-wider mt-6 mb-3 pl-2">
-                  {item.label}
-                </li>
-              );
-            }
+      <Separator />
 
-            const Icon = item.icon!;
-            const isActive = pathname === item.href;
-
+      {/* Menu chính */}
+      <nav className="flex-1 overflow-y-auto px-3 py-4">
+        <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Menu chính
+        </p>
+        <div className="space-y-1">
+          {mainMenu.map(item => {
+            const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
             return (
-              <li key={idx} className="mb-1">
-                <Link
-                  href={item.href!}
-                  className={cn(
-                    "flex items-center px-4 py-3 rounded-xl transition-all font-medium text-[0.9375rem]",
-                    isActive
-                      ? "bg-gradient-to-r from-[#4c1d95] to-[#7c3aed] text-white shadow-lg shadow-purple-900/30"
-                      : "text-[#94a3b8] hover:bg-purple-900/10 hover:text-white"
-                  )}
-                >
-                  <Icon className="mr-3 w-[1.125rem] opacity-80" />
-                  {item.label}
-                </Link>
-              </li>
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                  isActive
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                )}
+              >
+                <item.icon className="h-4 w-4" />
+                {item.label}
+              </Link>
             );
           })}
-        </ul>
+        </div>
+
+        <p className="mb-2 mt-6 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Quản trị
+        </p>
+        <div className="space-y-1">
+          {adminMenu.map(item => {
+            const isActive = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                  isActive
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                )}
+              >
+                <item.icon className="h-4 w-4" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
       </nav>
 
-      <div className="mt-auto flex items-center gap-3 p-4 bg-black/20 rounded-2xl">
-        <div className="w-9 h-9 bg-[#8b5cf6] rounded-full flex items-center justify-center font-bold text-[0.8rem]">
-          AD
+      <Separator />
+
+      {/* User info + Logout */}
+      <div className="px-3 py-4">
+        <div className="flex items-center gap-3">
+          <Avatar className="h-8 w-8">
+            <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex-1 min-w-0">
+            <p className="truncate text-sm font-medium text-foreground">
+              {user?.display_name || 'User'}
+            </p>
+            <p className="text-[11px] text-muted-foreground">{roleLabel}</p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            onClick={handleSignOut}
+            title="Đăng xuất"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
         </div>
-        <div className="flex-1">
-          <div className="text-[0.85rem] font-semibold">Admin DECOCO</div>
-          <div className="text-[0.7rem] text-[#94a3b8]">Quản trị viên</div>
-        </div>
-        <button
-          onClick={handleSignOut}
-          title="Đăng xuất"
-          className="text-[#94a3b8] hover:text-red-400 transition-colors"
-        >
-          <LogOut className="w-4" />
-        </button>
       </div>
     </aside>
   );

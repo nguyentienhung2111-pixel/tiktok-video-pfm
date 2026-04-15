@@ -1,74 +1,59 @@
-@import "tailwindcss";
-@source "../**/*.{ts,tsx}";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-:root {
-  --primary: #8b5cf6;
-  --primary-hover: #7c3aed;
-  --bg-main: #0b0e14;
-  --bg-sidebar: #1e1b4b;
-  --card-bg: #161b22;
-  --header-bg: rgba(11, 14, 20, 0.8);
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --border-color: #30363d;
-  --success: #10b981;
-  --warning: #f59e0b;
-  --danger: #ef4444;
-  --accent-purple: #c084fc;
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 262.1 83.3% 57.8%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 262.1 83.3% 57.8%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 7%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 7%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 263.4 70% 50.4%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 263.4 70% 50.4%;
+  }
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-body {
-  background-color: var(--bg-main);
-  color: var(--text-main);
-  min-height: 100vh;
-  overflow-x: hidden;
-}
-
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--bg-main);
-}
-
-::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #475569;
-}
-
-/* Base Styles for Components */
-.card-premium {
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 1.25rem;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.card-premium:hover {
-  border-color: var(--primary);
-  transform: translateY(-2px);
-}
-
-/* Table Specific Styles */
-.sticky-col {
-  position: sticky;
-  z-index: 10;
-  background: var(--card-bg);
-}
-
-.sticky-shadow {
-  border-right: 1px solid var(--border-color) !important;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }

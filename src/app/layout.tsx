@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import AppShell from "@/components/AppShell";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "TikTok Video Performance - DECOCO",
-  description: "Web app nội bộ giúp DECOCO theo dõi và phân tích hiệu suất video TikTok Shop.",
+  description: "Web app nTi bT giAp DECOCO theo dAi vA phAn tA-ch hiu sut video TikTok Shop.",
 };
 
 export default function RootLayout({
@@ -16,11 +15,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="vi">
+    <html lang="vi" className="dark">
       <body className={inter.className}>
-        <AppShell>
-          {children}
-        </AppShell>
+        {children}
       </body>
     </html>
   );
