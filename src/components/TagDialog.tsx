@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { Tag, TagGroup, Video } from '@/types';
-import { Check, X, Tag as TagIcon, Loader2 } from 'lucide-react';
+import { Check, X, Tag as TagIcon, Loader2, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface TagDialogProps {
