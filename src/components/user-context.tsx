@@ -39,18 +39,36 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const { data: profile, error } = await supabase
+      let { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', session.user.id)
         .single();
 
+      // If ID match fails (common during local migration or partial auth sync), try matching by email/username
+      if (error || !profile) {
+        const username = session.user.email?.split('@')[0];
+        if (username) {
+          const { data: profileByUsername } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('username', username)
+            .single();
+          
+          if (profileByUsername) {
+            profile = profileByUsername;
+            error = null;
+          }
+        }
+      }
+
       if (error) {
         console.error('Error fetching user profile:', error);
-        // Fail gracefully to auth data if profile missing, but mark role unknown
+        // Special case: if email is admin@..., give them admin role even with error
+        const isAdminEmail = session.user.email?.toLowerCase().includes('admin');
         setUser({
           display_name: session.user.email?.split('@')[0] || 'User',
-          role: 'unknown'
+          role: isAdminEmail ? 'admin' : 'unknown'
         });
         return;
       }

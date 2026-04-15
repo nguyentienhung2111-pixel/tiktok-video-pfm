@@ -1,131 +1,133 @@
 'use client';
 
 import React, { useState } from 'react';
-import { UploadCloud, FileCheck, AlertCircle, ChevronDown } from 'lucide-react';
+import { UploadCloud, FileCheck, AlertCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '@/lib/supabase';
 
 type SourceType = 'brand' | 'koc';
 
 // Vietnamese TikTok Seller Center column header mapping
-// Vietnamese TikTok Seller Center column header mapping
-const COLUMN_MAPPING: Record<string, string> = {
-  'Tên nhà sáng tạo': 'creator_name',
-  'ID nhà sáng tạo': 'creator_id',
-  'Thông tin video': 'video_title',
+const COLUMN_MAPPING: Record<string, string | undefined> = {
+  // English Headers
+  'Video ID': 'video_id',
+  'Source Type': 'source_type',
+  'Creator Name': 'creator_name',
+  'Creator ID': 'creator_id',
+  'Video Title': 'video_title',
+  'Published Time': 'published_at',
+  'Video Post Time': 'published_at',
+  'Post Date': 'published_at',
+  'Product Name': 'product_name',
+  'Product ID': 'product_id',
+  'Video Views': 'views',
+  'Views': 'views',
+  'Video Likes': 'likes',
+  'Likes': 'likes',
+  'Video Comments': 'comments',
+  'Comments': 'comments',
+  'Video Shares': 'shares',
+  'Shares': 'shares',
+  'Orders': 'orders',
+  'GMV': 'gmv',
+  'GMV (₫)': 'gmv',
+  'Engagement': 'engagement',
+  
+  // Vietnamese Headers (TikTok Seller Center & Analytic Data)
+  'Mã video': 'video_id',
   'ID video': 'video_id',
+  'Nguồn': 'source_type',
+  'Người sáng tạo': 'creator_name',
+  'Tên tác giả': 'creator_name',
+  'ID nhà sáng tạo': 'creator_id',
+  'ID người sáng tạo': 'creator_id',
+  'Tiêu đề video': 'video_title',
+  'Thông tin video': 'video_title',
+  'Thời gian đăng': 'published_at',
+  'Ngày đăng': 'published_at',
   'Thời gian': 'published_at',
+  'Tên sản phẩm': 'product_name',
   'Sản phẩm': 'product_name',
-  'VV': 'views',
+  'ID sản phẩm': 'product_id',
+  'Lượt xem': 'views',
+  'Lượt xem video': 'views',
   'Lượt thích': 'likes',
   'Bình luận': 'comments',
+  'Chia sẻ': 'shares',
   'Lượt chia sẻ': 'shares',
-  'Người theo dõi mới': 'new_followers',
   'Đơn hàng': 'orders',
+  'Số đơn hàng': 'orders',
+  'Số lượng đơn hàng': 'orders',
   'Số món bán ra từ video': 'items_sold',
   'Tổng giá trị hàng hóa (Video) (₫)': 'gmv',
-  'GPM (₫)': 'gpm',
   'GMV quy ra từ video bán hàng (₫)': 'gmv',
+  'Doanh thu (₫)': 'gmv',
+  'Doanh số (₫)': 'gmv',
+  'Giá trị giao dịch': 'gmv',
+  'Tỷ lệ nhấp (CTR)': 'ctr',
   'Tỷ lệ nhấp (Video)': 'ctr',
+  'Tỷ lệ xem hết': 'completion_rate',
   'Tỷ lệ xem hết video': 'completion_rate',
-  'Tỷ lệ nhấp đến đặt hàng (Video)': 'click_to_order_rate',
-  'Chẩn đoán': 'diagnosis',
   'Lượt hiển thị': 'impressions',
   'Số lượng người xem video': 'reach',
-  // Legacy/English fallbacks
-  'Username': 'creator_name',
-  'Tên người dùng': 'creator_name',
-  'ID Creator': 'creator_id',
-  'Video title': 'video_title',
-  'Tiêu đề video': 'video_title',
-  'Video post time': 'published_at',
-  'Ngày đăng': 'published_at',
-  'Thời gian đăng': 'published_at',
-  'Tên sản phẩm': 'product_name',
-  'Video views': 'views',
-  'Lượt xem': 'views',
-  'Video completion rate': 'completion_rate',
-  'Tỷ lệ xem hết': 'completion_rate',
-  'Nhấp sang đặt hàng': 'click_to_order_rate',
-  'Reach': 'reach',
-  'Tiếp cận': 'reach',
-  'Impressions': 'impressions',
-  'Hiển thị': 'impressions',
+  'Chẩn đoán': 'diagnosis',
+  'Gán cho': 'assigned_user_id',
+  'Thẻ': 'tags',
+  
+  // Legend fallbacks
+  'video_id': 'video_id',
+  'published_at': 'published_at',
+  'gmv': 'gmv',
+  'views': 'views',
+  'orders': 'orders'
 };
 
 function parseNum(val: unknown): number {
   if (val === null || val === undefined || val === '') return 0;
   if (typeof val === 'number') return val;
   
-  let s = String(val).trim();
-  // Remove currency and other non-numeric symbols but keep comma and dot
-  s = s.replace(/[₫%]/g, '').trim();
+  const s = String(val).trim().replace(/[₫%]/g, '');
+  if (!s) return 0;
   
-  // Logic for dots and commas:
-  // If we have "1.000,00" -> 1000.00
-  // If we have "1,000.00" -> 1000.00
-  // If we have "1.000" (Vietnamese for thousand) -> 1000
-  // If we have "1,000" (International for thousand) -> 1000
+  // Detect European/Vietnamese format (1.234,56)
+  const lastDot = s.lastIndexOf('.');
+  const lastComma = s.lastIndexOf(',');
   
-  // Count counts
-  const dotCount = (s.match(/\./g) || []).length;
-  const commaCount = (s.match(/,/g) || []).length;
-  
-  if (dotCount > 0 && commaCount > 0) {
-    // Both exist. Usually 1.000,00 or 1,000.00.
-    // Assume the last one is the decimal separator.
-    const dotIndex = s.lastIndexOf('.');
-    const commaIndex = s.lastIndexOf(',');
-    if (dotIndex > commaIndex) {
-      // 1,000.00
-      s = s.replace(/,/g, '');
-    } else {
-      // 1.000,00
-      s = s.replace(/\./g, '').replace(/,/g, '.');
-    }
-  } else if (commaCount > 1) {
-    // 1,000,000 -> 1000000
-    s = s.replace(/,/g, '');
-  } else if (dotCount > 1) {
-    // 1.000.000 -> 1000000
-    s = s.replace(/\./g, '');
-  } else if (commaCount === 1) {
-    // 1000,50 -> 1000.50
-    s = s.replace(/,/g, '.');
+  if (lastComma > lastDot) {
+    // 1.234,56 -> 1234.56
+    return parseFloat(s.replace(/\./g, '').replace(',', '.'));
   }
-  // If only one dot remains, it's already in the right format for parseFloat if it's a decimal.
-  // But wait, if it's "1.000" (thousand), parseFloat will make it "1".
-  // This is the trickiest case in Vietnamese vs International.
-  // However, most TikTok reports for GMV will have large numbers.
-  // If the string represents a large number like "1.500", it's probably 1500.
-  // But for rates like "0.5", it's 0.5.
   
-  const n = parseFloat(s);
-  return isNaN(n) ? 0 : n;
+  // Default/US format (1,234.56)
+  return parseFloat(s.replace(/,/g, ''));
 }
 
 function parseDate(val: unknown): string | null {
   if (!val) return null;
+  
+  // Handle Excel Serial Dates (numbers like 45400)
+  if (typeof val === 'number') {
+    const excelBaseDate = new Date(1899, 11, 30);
+    const date = new Date(excelBaseDate.getTime() + val * 24 * 60 * 60 * 1000);
+    if (!isNaN(date.getTime())) return date.toISOString();
+  }
+
   if (val instanceof Date) return val.toISOString();
   
   const s = String(val).trim();
   if (!s) return null;
   
-  // Try standard Date parsing first (handles ISO, some Regional)
   const d = new Date(s);
   if (!isNaN(d.getTime())) return d.toISOString();
   
-  // Handle DD/MM/YYYY format commonly used in Vietnamese Excel exports
+  // Handle DD/MM/YYYY
   const parts = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(.*)$/);
   if (parts) {
     const day = parseInt(parts[1], 10);
     const month = parseInt(parts[2], 10) - 1;
     const year = parseInt(parts[3], 10);
-    
-    // Create date at noon to avoid timezone shifts during initialization
     const date = new Date(year, month, day, 12, 0, 0);
     
-    // Parse time if present (e.g., " 14:30")
     if (parts[4]) {
       const timeMatch = parts[4].match(/(\d{1,2})[:](\d{1,2})([:](\d{1,2}))?/);
       if (timeMatch) {
@@ -160,7 +162,7 @@ function mapRow(row: Record<string, unknown>, sourceType: SourceType): Record<st
     impressions: 0,
     views: 0,
     tags: [],
-    raw_data: row // Store original row data for transparency
+    raw_data: row 
   };
 
   for (const [colHeader, value] of Object.entries(row)) {
@@ -221,7 +223,6 @@ export default function UploadForm() {
 
         if (error) throw error;
 
-        // Log upload history
         await supabase.from('upload_history').insert({
           file_name: file.name,
           source_type: sourceType,
@@ -241,7 +242,6 @@ export default function UploadForm() {
         setUploadStatus({ type: 'error', message: 'Lỗi khi xử lý file: ' + msg });
       } finally {
         setIsUploading(false);
-        // Reset file input
         e.target.value = '';
       }
     };
@@ -250,9 +250,8 @@ export default function UploadForm() {
 
   return (
     <div className="space-y-6">
-      {/* Source Type Selector */}
-      <div className="bg-[#161b22] border border-[#30363d] rounded-2xl p-6">
-        <h3 className="text-sm font-semibold text-[#94a3b8] mb-4 uppercase tracking-wider">Chọn loại nguồn dữ liệu</h3>
+      <div className="bg-[#161b22] border border-[#30363d] rounded-2xl p-6 text-foreground">
+        <h3 className="text-sm font-semibold text-muted-foreground mb-4 uppercase tracking-wider">Chọn loại nguồn dữ liệu</h3>
         <div className="flex gap-3">
           <button
             onClick={() => setSourceType('brand')}
@@ -275,14 +274,8 @@ export default function UploadForm() {
             KOC / Affiliate
           </button>
         </div>
-        <p className="text-xs text-[#94a3b8] mt-3">
-          {sourceType === 'brand'
-            ? 'Dành cho video từ kênh TikTok Official của thương hiệu DECOCO.'
-            : 'Dành cho video từ KOC, Affiliate, và Creator bên ngoài.'}
-        </p>
       </div>
 
-      {/* Upload Area */}
       <div className="bg-[#161b22] border border-[#30363d] rounded-2xl p-10 flex flex-col items-center justify-center text-center space-y-6">
         <div className={`w-20 h-20 rounded-full flex items-center justify-center ${
           sourceType === 'brand' ? 'bg-emerald-500/10' : 'bg-purple-500/10'
@@ -291,10 +284,10 @@ export default function UploadForm() {
         </div>
 
         <div>
-          <h2 className="text-xl font-bold mb-1">
+           <h2 className="text-xl font-bold mb-1 text-foreground">
             Upload báo cáo {sourceType === 'brand' ? 'Thương hiệu' : 'KOC/Affiliate'}
           </h2>
-          <p className="text-[#94a3b8] text-sm">
+          <p className="text-muted-foreground text-sm">
             Chấp nhận file .xlsx hoặc .csv từ TikTok Seller Center.
           </p>
         </div>
@@ -306,64 +299,31 @@ export default function UploadForm() {
             ? 'bg-emerald-600 hover:bg-emerald-500'
             : 'bg-[#8b5cf6] hover:bg-[#7c3aed]'
         }`}>
-          <input
-            type="file"
-            className="hidden"
-            accept=".xlsx,.csv,.xls"
-            onChange={handleFileUpload}
-            disabled={isUploading}
-          />
+          <input type="file" className="hidden" accept=".xlsx,.csv,.xls" onChange={handleFileUpload} disabled={isUploading} />
           {isUploading ? 'Đang xử lý...' : 'Chọn file từ máy tính'}
         </label>
 
         {uploadStatus.type === 'success' && (
           <div className="w-full flex flex-col items-center gap-1 text-[#10b981] bg-emerald-500/10 border border-emerald-500/20 px-6 py-4 rounded-xl">
-            <div className="flex items-center gap-2 font-semibold">
-              <FileCheck className="w-4 h-4" />
-              {uploadStatus.message}
-            </div>
-            {uploadStatus.detail && (
-              <div className="text-xs text-emerald-500/80">{uploadStatus.detail}</div>
-            )}
+             <span className="font-semibold">{uploadStatus.message}</span>
+             {uploadStatus.detail && <span className="text-xs opacity-80">{uploadStatus.detail}</span>}
           </div>
         )}
 
         {uploadStatus.type === 'error' && (
-          <div className="w-full flex items-center gap-2 text-[#ef4444] bg-red-500/10 border border-red-500/20 px-6 py-4 rounded-xl text-sm">
+          <div className="w-full flex items-center gap-2 text-red-500 bg-red-500/10 border border-red-500/20 px-6 py-4 rounded-xl text-sm">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
             {uploadStatus.message}
           </div>
         )}
       </div>
 
-      {/* Column mapping guide */}
-      <div className="bg-[#161b22] border border-[#30363d] rounded-2xl p-6">
-        <h3 className="text-sm font-semibold text-[#94a3b8] mb-4 uppercase tracking-wider">Cột dữ liệu được nhận diện</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs text-[#94a3b8]">
-          {[
-            'Video ID / ID video',
-            'Username / Creator',
-            'Video title / Tiêu đề',
-            'Video post time / Ngày đăng',
-            'Product name / Tên sản phẩm',
-            'Video views / Lượt xem',
-            'Likes / Lượt thích',
-            'Comments / Bình luận',
-            'Shares / Chia sẻ',
-            'New followers',
-            'Orders / Đơn hàng',
-            'GMV / Doanh thu',
-            'GPM',
-            'CTR / Tỷ lệ nhấp',
-            'Video completion rate',
-            'Conversion rate',
-            'Click-to-order rate',
-            'Reach / Tiếp cận',
-            'Impressions / Hiển thị',
-            'Video diagnosis / Chẩn đoán',
-          ].map(col => (
-            <div key={col} className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6]/60 flex-shrink-0" />
+       <div className="bg-[#161b22] border border-[#30363d] rounded-2xl p-6">
+        <h3 className="text-sm font-semibold text-muted-foreground mb-4 uppercase tracking-wider">Dữ liệu quan trọng cần có</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-y-3 gap-x-6 text-xs text-muted-foreground">
+          {['Mã video (ID)', 'GMV / Doanh thu', 'Lượt xem (Views)', 'Ngày đăng (Post time)', 'Tên creator', 'Số đơn hàng'].map(col => (
+            <div key={col} className="flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-primary/60" />
               <span>{col}</span>
             </div>
           ))}

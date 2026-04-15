@@ -75,10 +75,10 @@ export default function DashboardPage() {
   };
 
   const scorecards = [
-    { label: 'Tổng GMV', value: formatCurrency(totalGMV), change: '+12.4%', up: true },
-    { label: 'Tổng đơn hàng', value: formatNumber(totalOrders), change: '+5.1%', up: true },
-    { label: 'Tổng Video', value: videos.length.toString(), change: '+2', up: true },
-    { label: 'Tổng lượt xem', value: formatNumber(totalViews), change: '+8.7%', up: true },
+    { label: 'Tổng GMV', value: formatCurrency(totalGMV), change: '', up: true },
+    { label: 'Tổng đơn hàng', value: formatNumber(totalOrders), change: '', up: true },
+    { label: 'Tổng Video', value: videos.length.toString(), change: '', up: true },
+    { label: 'Tổng lượt xem', value: formatNumber(totalViews), change: '', up: true },
   ];
 
   const handleExport = async () => {
@@ -127,19 +127,21 @@ export default function DashboardPage() {
               <CardContent className="p-6">
                 <p className="text-sm text-muted-foreground">{item.label}</p>
                 <p className="mt-1 text-2xl font-bold">{item.value}</p>
-                <div className="mt-1 flex items-center gap-1">
-                  {item.up ? (
-                    <TrendingUp className="h-3 w-3 text-emerald-500" />
-                  ) : (
-                    <TrendingDown className="h-3 w-3 text-red-500" />
-                  )}
-                  <span className={cn(
-                    "text-xs",
-                    item.up ? "text-emerald-500" : "text-red-500"
-                  )}>
-                    {item.change} so với kỳ trước
-                  </span>
-                </div>
+                {item.change && (
+                  <div className="mt-1 flex items-center gap-1">
+                    {item.up ? (
+                      <TrendingUp className="h-3 w-3 text-emerald-500" />
+                    ) : (
+                      <TrendingDown className="h-3 w-3 text-red-500" />
+                    )}
+                    <span className={cn(
+                      "text-xs",
+                      item.up ? "text-emerald-500" : "text-red-500"
+                    )}>
+                      {item.change} so với kỳ trước
+                    </span>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
