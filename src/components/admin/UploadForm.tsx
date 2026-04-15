@@ -216,17 +216,54 @@ export default function UploadForm() {
     setIsUploading(true);
     setUploadStatus({ type: null, message: '' });
 
-    const reader = new FileReader();
+        const reader = new FileReader();
     reader.onload = async (event) => {
       try {
         const data = new Uint8Array(event.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: 'array' });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
-        const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet);
+        
+        // Use header: 1 to get array of arrays for header detection
+        const rawRows = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
+        
+        if (rawRows.length === 0) {
+          setUploadStatus({ type: 'error', message: 'File không có dữ liệu.' });
+          return;
+        }
 
-        if (jsonData.length === 0) {
-          setUploadStatus({ type: 'error', message: 'File không có dữ liệu hoặc không đọc được.' });
+        // --- Automatic Header Row Detection ---
+        let headerRowIndex = 0;
+        let maxMatches = 0;
+        
+        // Scan first 15 rows to find the one that matches our COLUMN_MAPPING best
+        for (let i = 0; i < Math.min(15, rawRows.length); i++) {
+          const row = rawRows[i];
+          if (!Array.isArray(row)) continue;
+          
+          let matches = 0;
+          row.forEach(cell => {
+            const cellStr = String(cell || '').trim();
+            if (COLUMN_MAPPING[cellStr]) matches++;
+          });
+          
+          if (matches > maxMatches) {
+            maxMatches = matches;
+            headerRowIndex = i;
+          }
+        }
+
+        // Re-parse from the detected header row
+        const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { 
+          range: headerRowIndex 
+        });
+
+        if (jsonData.length === 0 || maxMatches === 0) {
+          setUploadStatus({ 
+            type: 'error', 
+            message: 'Không tìm thấy dòng tiêu đề phù hợp.', 
+            detail: 'Hãy đảm bảo file Excel có chứa các cột như "Mã video", "GMV", "Ngày"...' 
+          });
           return;
         }
 
