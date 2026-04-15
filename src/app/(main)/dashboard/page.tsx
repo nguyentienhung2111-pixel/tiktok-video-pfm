@@ -1,44 +1,120 @@
+'use client';
+
+import React, { useEffect, useState, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Calendar, Camera, TrendingUp, TrendingDown, Tv, Upload } from 'lucide-react';
+import { TrendingUp, TrendingDown, Tv, Upload, FileDown, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-// TODO: Thay bằng dữ liệu thật từ Supabase
-const scorecards = [
-  { label: 'Tổng GMV', value: '0 đ', change: '+12.4%', up: true },
-  { label: 'Tổng đơn hàng', value: '0', change: '+5.1%', up: true },
-  { label: 'Tổng Video', value: '0', change: '-2.3%', up: false },
-  { label: 'Tổng lượt xem', value: '0', change: '+8.7%', up: true },
-];
+import { supabase } from '@/lib/supabase';
+import { Video, Profile } from '@/types';
+import { VideoTable } from '@/components/VideoTable';
+import DashboardHeader from '@/components/DashboardHeader';
+import { DateRangePicker } from '@/components/date-range-picker';
+import { DateRange } from 'react-day-picker';
+import { subDays, startOfToday } from 'date-fns';
+import { toPng } from 'html-to-image';
 
 export default function DashboardPage() {
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [users, setUsers] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [date, setDate] = useState<DateRange | undefined>({
+    from: subDays(startOfToday(), 7),
+    to: startOfToday(),
+  });
+
+  const dashboardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    async function fetchData() {
+      setLoading(true);
+      try {
+        let query = supabase
+          .from('videos')
+          .select('*')
+          .order('published_at', { ascending: false });
+
+        if (date?.from) {
+          query = query.gte('published_at', date.from.toISOString());
+        }
+        if (date?.to) {
+          query = query.lte('published_at', date.to.toISOString());
+        }
+
+        const { data: videoData, error: videoError } = await query;
+        if (videoError) throw videoError;
+
+        const { data: userData, error: userError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('is_active', true);
+        if (userError) throw userError;
+
+        setVideos((videoData as Video[]) || []);
+        setUsers((userData as Profile[]) || []);
+      } catch (error) {
+        console.error('Lỗi khi tải dữ liệu:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, [date]);
+
+  const totalGMV = videos.reduce((sum, v) => sum + (v.gmv || 0), 0);
+  const totalViews = videos.reduce((sum, v) => sum + (v.views || 0), 0);
+  const totalOrders = videos.reduce((sum, v) => sum + (v.orders || 0), 0);
+
+  const formatCurrency = (val: number) => {
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
+  };
+
+  const formatNumber = (val: number) => {
+    return new Intl.NumberFormat('vi-VN').format(val);
+  };
+
+  const scorecards = [
+    { label: 'Tổng GMV', value: formatCurrency(totalGMV), change: '+12.4%', up: true },
+    { label: 'Tổng đơn hàng', value: formatNumber(totalOrders), change: '+5.1%', up: true },
+    { label: 'Tổng Video', value: videos.length.toString(), change: '+2', up: true },
+    { label: 'Tổng lượt xem', value: formatNumber(totalViews), change: '+8.7%', up: true },
+  ];
+
+  const handleExport = async () => {
+    if (dashboardRef.current === null) return;
+    
+    try {
+      const dataUrl = await toPng(dashboardRef.current, { cacheBust: true, backgroundColor: '#0d1117' });
+      const link = document.createElement('a');
+      link.download = `report-dashboard-${new Date().getTime()}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error('Lỗi khi xuất báo cáo:', err);
+    }
+  };
+
   return (
     <div className="flex flex-col min-h-screen">
-      {/* Top bar */}
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur">
-        <div>
-          <h1 className="text-lg font-bold">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Tổng hợp hiệu suất video</p>
-        </div>
+      <DashboardHeader 
+        title="Dashboard Tổng quan" 
+        subtitle="Dữ liệu hiệu suất video TikTok DECOCO"
+      >
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm">
-            <Calendar className="mr-2 h-4 w-4" />
-            7 ngày qua
-          </Button>
-          <Button size="sm" className="bg-primary text-primary-foreground">
-            <Camera className="mr-2 h-4 w-4" />
-            Xuất báo cáo
+          <DateRangePicker date={date} setDate={setDate} />
+          <Button size="sm" className="bg-primary text-primary-foreground" onClick={handleExport}>
+            <FileDown className="mr-2 h-4 w-4" />
+            Xuất báo cáo (Ảnh)
           </Button>
         </div>
-      </header>
+      </DashboardHeader>
 
-      {/* Content */}
-      <div className="p-6 space-y-6">
+      <div className="p-6 space-y-6" ref={dashboardRef}>
         {/* Scorecards */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {scorecards.map((item) => (
-            <Card key={item.label}>
+            <Card key={item.label} className="border-[#30363d] bg-[#161b22]">
               <CardContent className="p-6">
                 <p className="text-sm text-muted-foreground">{item.label}</p>
                 <p className="mt-1 text-2xl font-bold">{item.value}</p>
@@ -60,24 +136,35 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {/* Empty state */}
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-              <Tv className="h-8 w-8 text-muted-foreground" />
+        {/* Video Table Area */}
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-bold">Chi tiết video trong kỳ</h2>
+          </div>
+          {loading ? (
+            <div className="h-64 flex items-center justify-center border border-[#30363d] rounded-2xl bg-[#161b22]">
+              <Loader2 className="animate-spin h-8 w-8 text-primary" />
             </div>
-            <p className="mt-4 text-lg font-medium">Chưa có dữ liệu video</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Tải lên file Excel từ TikTok Seller Center để bắt đầu phân tích
-            </p>
-            <Button className="mt-4" asChild>
-              <a href="/admin/upload">
-                <Upload className="mr-2 h-4 w-4" />
-                Upload dữ liệu ngay
-              </a>
-            </Button>
-          </CardContent>
-        </Card>
+          ) : videos.length === 0 ? (
+            <Card className="border-[#30363d] bg-[#161b22]">
+              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+                <Tv className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-lg font-medium text-foreground">Chưa có dữ liệu video</p>
+                <p className="text-sm text-muted-foreground max-w-sm mx-auto mt-2">
+                  Tải lên file Excel từ TikTok Seller Center (Analytic Data) để bắt đầu phân tích hiệu suất.
+                </p>
+                <Button className="mt-6" asChild>
+                  <a href="/admin/upload">
+                    <Upload className="mr-2 h-4 w-4" />
+                    Upload ngay
+                  </a>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <VideoTable videos={videos} users={users} />
+          )}
+        </div>
       </div>
     </div>
   );

@@ -12,6 +12,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 
+import { useUser } from '@/components/user-context';
+
 const mainMenu = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/team/content', label: 'Thương hiệu', icon: Tv },
@@ -27,14 +29,10 @@ const adminMenu = [
   { href: '/admin/settings', label: 'Cài đặt', icon: Settings },
 ];
 
-interface SidebarProps {
-  user?: { display_name: string; role: string } | null;
-}
-
-export default function Sidebar({ user }: SidebarProps) {
+export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-
+  const { user, loading } = useUser();
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     router.push('/login');
