@@ -274,8 +274,12 @@ export default function UploadForm() {
 
         const mappedVideos = jsonData.map(row => mapRow(row, sourceType, skuMappings || []));
 
-        // Batch upsert to prevent large payload errors (e.g. 500 rows per batch)
-        const BATCH_SIZE = 500;
+        if (mappedVideos.length === 0) {
+          throw new Error('Không có dữ liệu hợp lệ được trích xuất từ file.');
+        }
+
+        // Batch upsert to prevent large payload errors (Smaller batch for more stability)
+        const BATCH_SIZE = 200; 
         let successCount = 0;
         
         for (let i = 0; i < mappedVideos.length; i += BATCH_SIZE) {
@@ -284,7 +288,10 @@ export default function UploadForm() {
             .from('videos')
             .upsert(batch, { onConflict: 'video_id' });
             
-          if (batchError) throw batchError;
+          if (batchError) {
+            console.error('Batch error:', batchError);
+            throw new Error(`Lỗi khi lưu dữ liệu (Batch ${Math.floor(i/BATCH_SIZE) + 1}): ${batchError.message}`);
+          }
           successCount += batch.length;
         }
 
@@ -380,9 +387,16 @@ export default function UploadForm() {
         )}
 
         {uploadStatus.type === 'error' && (
-          <div className="w-full flex items-center gap-2 text-red-500 bg-red-500/10 border border-red-500/20 px-6 py-4 rounded-xl text-sm">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            {uploadStatus.message}
+          <div className="w-full flex items-start gap-3 text-red-400 bg-red-500/10 border border-red-500/20 px-6 py-4 rounded-xl text-sm transition-all animate-in fade-in slide-in-from-top-2">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div className="flex flex-col items-start gap-1">
+              <span className="font-bold">{uploadStatus.message}</span>
+              {uploadStatus.detail && (
+                <span className="text-xs text-red-500/80 break-all text-left">
+                  {uploadStatus.detail}
+                </span>
+              )}
+            </div>
           </div>
         )}
       </div>
