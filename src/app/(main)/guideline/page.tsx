@@ -162,7 +162,7 @@ export default function GuidelinePage() {
                    <div className="grid grid-cols-1 gap-2">
                       <div className="p-2 rounded bg-[#0d1117] border border-[#30363d]">
                         <span className="text-blue-400 font-mono text-xs">#koc_mega</span>
-                        <p className="text-xs text-muted-foreground mt-1">>1M followers, sức ảnh hưởng cực lớn.</p>
+                        <p className="text-xs text-muted-foreground mt-1">&gt;1M followers, sức ảnh hưởng cực lớn.</p>
                       </div>
                       <div className="p-2 rounded bg-[#0d1117] border border-[#30363d]">
                         <span className="text-blue-400 font-mono text-xs">#koc_macro</span>
