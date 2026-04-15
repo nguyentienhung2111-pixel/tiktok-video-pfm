@@ -274,11 +274,19 @@ export default function UploadForm() {
 
         const mappedVideos = jsonData.map(row => mapRow(row, sourceType, skuMappings || []));
 
-        const { error } = await supabase
-          .from('videos')
-          .upsert(mappedVideos, { onConflict: 'video_id' });
-
-        if (error) throw error;
+        // Batch upsert to prevent large payload errors (e.g. 500 rows per batch)
+        const BATCH_SIZE = 500;
+        let successCount = 0;
+        
+        for (let i = 0; i < mappedVideos.length; i += BATCH_SIZE) {
+          const batch = mappedVideos.slice(i, i + BATCH_SIZE);
+          const { error: batchError } = await supabase
+            .from('videos')
+            .upsert(batch, { onConflict: 'video_id' });
+            
+          if (batchError) throw batchError;
+          successCount += batch.length;
+        }
 
         await supabase.from('upload_history').insert({
           file_name: file.name,
@@ -293,10 +301,14 @@ export default function UploadForm() {
           message: `Tải lên thành công ${mappedVideos.length} video!`,
           detail: `File: ${file.name} | Nguồn: ${sourceType === 'brand' ? 'Thương hiệu' : 'KOC/Affiliate'}`
         });
-      } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : String(error);
+      } catch (error: any) {
+        const msg = error.message || (typeof error === 'string' ? error : JSON.stringify(error));
         console.error('Lỗi upload:', error);
-        setUploadStatus({ type: 'error', message: 'Lỗi khi xử lý file: ' + msg });
+        setUploadStatus({ 
+          type: 'error', 
+          message: 'Lỗi khi xử lý file:', 
+          detail: msg 
+        });
       } finally {
         setIsUploading(false);
         e.target.value = '';
