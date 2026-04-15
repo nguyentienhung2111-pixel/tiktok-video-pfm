@@ -46,7 +46,8 @@ export default function DashboardPage() {
     setLoading(true);
     try {
       let query = supabase
-        .from('videos');
+        .from('videos')
+        .select('*', { count: 'exact' });
 
       // Apply Date Filter (Using YYYY-MM-DD format for DATE column)
       if (date?.from) {
@@ -101,15 +102,14 @@ export default function DashboardPage() {
         }
       }
 
-      // Add Sorting (Highest GMV first as requested)
-      query = query.order('gmv', { ascending: false });
-
       // Apply Pagination
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
-      query = query.range(from, to);
-
-      const { data: videoData, error: videoError, count } = await query.select('*', { count: 'exact' });
+      
+      const { data: videoData, error: videoError, count } = await query
+        .order('gmv', { ascending: false })
+        .range(from, to);
+        
       if (videoError) throw videoError;
 
       if (count !== null) setTotalCount(count);

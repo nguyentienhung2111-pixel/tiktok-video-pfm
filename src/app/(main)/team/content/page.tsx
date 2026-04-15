@@ -48,6 +48,7 @@ export default function ContentTeamPage() {
     try {
       let query = supabase
         .from('videos')
+        .select('*', { count: 'exact' })
         .eq('source_type', 'brand');
 
       // Apply Date Filter (Using YYYY-MM-DD format for DATE column)
@@ -84,8 +85,7 @@ export default function ContentTeamPage() {
       
       const { data: videoData, error: videoError, count } = await query
         .order('gmv', { ascending: false })
-        .range(from, to)
-        .select('*', { count: 'exact' });
+        .range(from, to);
         
       if (videoError) throw videoError;
 
