@@ -48,9 +48,7 @@ export default function ContentTeamPage() {
     try {
       let query = supabase
         .from('videos')
-        .select('*')
-        .eq('source_type', 'brand')
-        .order('published_at', { ascending: false });
+        .eq('source_type', 'brand');
 
       // Apply Date Filter (Using YYYY-MM-DD format for DATE column)
       if (date?.from) {

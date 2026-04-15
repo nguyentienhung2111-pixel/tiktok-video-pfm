@@ -48,9 +48,7 @@ export default function BookingTeamPage() {
     try {
       let query = supabase
         .from('videos')
-        .select('*')
-        .eq('source_type', 'koc')
-        .order('published_at', { ascending: false });
+        .eq('source_type', 'koc');
 
       // Apply Date Filter (Using YYYY-MM-DD format for DATE column)
       if (date?.from) {

@@ -46,9 +46,7 @@ export default function DashboardPage() {
     setLoading(true);
     try {
       let query = supabase
-        .from('videos')
-        .select('*')
-        .order('published_at', { ascending: false });
+        .from('videos');
 
       // Apply Date Filter (Using YYYY-MM-DD format for DATE column)
       if (date?.from) {
