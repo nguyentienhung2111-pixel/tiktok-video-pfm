@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -10,6 +10,8 @@ function cn(...inputs: ClassValue[]) {
 
 import { Video, Profile } from '@/types';
 
+const PAGE_SIZE = 25;
+
 interface VideoTableProps {
   videos: Video[];
   users: Profile[];
@@ -18,6 +20,9 @@ interface VideoTableProps {
 }
 
 export default function VideoTable({ videos, users, onAssign, onTag }: VideoTableProps) {
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(videos.length / PAGE_SIZE));
+  const paged = videos.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
   };
@@ -53,7 +58,7 @@ export default function VideoTable({ videos, users, onAssign, onTag }: VideoTabl
             </tr>
           </thead>
           <tbody>
-            {videos.map((v) => (
+            {paged.map((v) => (
               <tr key={v.id} className="border-t border-[#30363d]">
                 <td className="sticky left-0 z-10 bg-[#161b22] shadow-[1px_0_0_0_#30363d] p-4">
                   <div className="truncate max-w-[200px]" title={v.video_title}>{v.video_title}</div>
@@ -107,6 +112,31 @@ export default function VideoTable({ videos, users, onAssign, onTag }: VideoTabl
           </tbody>
         </table>
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-4 py-3 border-t border-[#30363d]">
+          <span className="text-xs text-[#94a3b8]">
+            Hiển thị {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, videos.length)} / {videos.length} video
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-3 py-1.5 border border-[#30363d] rounded-lg text-xs font-semibold disabled:opacity-30 hover:bg-white/5 transition-colors"
+            >
+              ← Trước
+            </button>
+            <span className="text-xs text-[#94a3b8] px-2">{page} / {totalPages}</span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="px-3 py-1.5 border border-[#30363d] rounded-lg text-xs font-semibold disabled:opacity-30 hover:bg-white/5 transition-colors"
+            >
+              Sau →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
