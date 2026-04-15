@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { TrendingUp, TrendingDown, Tv, FileDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, Tv, FileDown, Loader2, Package, ShoppingBag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { Video, Profile } from '@/types';
@@ -14,51 +14,109 @@ import { DateRangePicker } from '@/components/date-range-picker';
 import { DateRange } from 'react-day-picker';
 import { subDays, startOfToday } from 'date-fns';
 import { toPng } from 'html-to-image';
+import FilterBar, { FilterState } from '@/components/FilterBar';
+import { Leaderboard, LeaderboardEntry } from '@/components/Leaderboard';
+
+const INITIAL_FILTERS: FilterState = {
+  search: '',
+  productId: '',
+  tagIds: [],
+  minGMV: '',
+  minViews: '',
+  sourceType: 'brand', 
+};
 
 export default function ContentTeamPage() {
   const { user } = useUser();
   const [videos, setVideos] = useState<Video[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState(INITIAL_FILTERS);
   const [date, setDate] = useState<DateRange | undefined>({
-    from: subDays(startOfToday(), 28),
+    from: subDays(startOfToday(), 14),
     to: startOfToday(),
   });
 
   const dashboardRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    async function fetchData() {
-      setLoading(true);
-      try {
-        let query = supabase
-          .from('videos')
-          .select('*')
-          .eq('source_type', 'brand')
-          .order('published_at', { ascending: false });
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      let query = supabase
+        .from('videos')
+        .select('*')
+        .eq('source_type', 'brand')
+        .order('published_at', { ascending: false });
 
-        if (date?.from) query = query.gte('published_at', date.from.toISOString());
-        if (date?.to) query = query.lte('published_at', date.to.toISOString());
-
-        const { data: videoData, error: videoError } = await query;
-        if (videoError) throw videoError;
-
-        const { data: userData, error: userError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('is_active', true);
-        if (userError) throw userError;
-
-        setVideos((videoData as Video[]) || []);
-        setUsers((userData as Profile[]) || []);
-      } catch (error) {
-        console.error('Lỗi khi tải dữ liệu Thương hiệu:', error);
-      } finally {
-        setLoading(false);
+      // Apply Date Filter (Using YYYY-MM-DD format for DATE column)
+      if (date?.from) {
+        const fromDate = new Date(date.from);
+        const year = fromDate.getFullYear();
+        const month = String(fromDate.getMonth() + 1).padStart(2, '0');
+        const day = String(fromDate.getDate()).padStart(2, '0');
+        query = query.gte('published_at', `${year}-${month}-${day}`);
       }
+      if (date?.to) {
+        const toDate = new Date(date.to);
+        const year = toDate.getFullYear();
+        const month = String(toDate.getMonth() + 1).padStart(2, '0');
+        const day = String(toDate.getDate()).padStart(2, '0');
+        query = query.lte('published_at', `${year}-${month}-${day}`);
+      }
+
+      if (filters.productId) query = query.eq('product_id', filters.productId);
+      if (filters.minGMV) query = query.gte('gmv', parseInt(filters.minGMV));
+      if (filters.minViews) query = query.gte('views', parseInt(filters.minViews));
+      if (filters.search) {
+        query = query.or(`video_title.ilike.%${filters.search}%,creator_name.ilike.%${filters.search}%`);
+      }
+
+      const { data: videoData, error: videoError } = await query;
+      if (videoError) throw videoError;
+
+      const { data: userData, error: userError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('is_active', true);
+      if (userError) throw userError;
+
+      setVideos((videoData as Video[]) || []);
+      setUsers((userData as Profile[]) || []);
+    } catch (error) {
+      console.error('Lỗi khi tải dữ liệu Thương hiệu:', error);
+    } finally {
+      setLoading(false);
     }
+  }, [date, filters]);
+
+  useEffect(() => {
     fetchData();
-  }, [date]);
+  }, [fetchData]);
+
+  // Calculate Leaderboards
+  const productLeaderboard = useMemo(() => {
+    const prodMap = new Map<string, { name: string, gmv: number, videos: number }>();
+    
+    videos.forEach(v => {
+      const name = v.product_name || 'Khác/Chưa rõ';
+      const current = prodMap.get(name) || { name, gmv: 0, videos: 0 };
+      prodMap.set(name, {
+        name,
+        gmv: current.gmv + (v.gmv || 0),
+        videos: current.videos + 1
+      });
+    });
+
+    return Array.from(prodMap.entries())
+      .map(([name, stats]) => ({
+        id: name,
+        name: stats.name,
+        value: stats.gmv,
+        subtitle: `${stats.videos} video gắn link`
+      } as LeaderboardEntry))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+  }, [videos]);
 
   const totalGMV = videos.reduce((sum, v) => sum + (v.gmv || 0), 0);
   const totalViews = videos.reduce((sum, v) => sum + (v.views || 0), 0);
@@ -82,7 +140,7 @@ export default function ContentTeamPage() {
         backgroundColor: '#0d1117',
         pixelRatio: 2,
         filter: (node: HTMLElement) => {
-          const exclusionClasses = ['DateRangePicker', 'Button', 'export-ignore'];
+          const exclusionClasses = ['DateRangePicker', 'Button', 'export-ignore', 'FilterBar'];
           return !exclusionClasses.some(cls => node.classList?.contains(cls));
         }
       });
@@ -99,49 +157,86 @@ export default function ContentTeamPage() {
     <div className="flex flex-col min-h-screen">
       <DashboardHeader 
         title="Thương hiệu (DECOCO Official)" 
-        subtitle="Phân tích hiệu suất các video từ kênh chính chủ"
+        subtitle="Phân tích hiệu suất video kênh chính chủ"
       >
         <div className="flex items-center gap-3">
           <DateRangePicker date={date} setDate={setDate} />
-          <Button size="sm" variant="outline" onClick={handleExport} className="export-ignore">
-            <FileDown className="mr-2 h-4 w-4" />
-            Xuất ảnh
+          <Button size="sm" variant="outline" onClick={handleExport} className="export-ignore border-[#30363d] text-[#94a3b8] hover:text-white">
+            <FileDown className="mr-2 h-4 w-4 " />
+            Lưu báo cáo
           </Button>
         </div>
       </DashboardHeader>
 
-      <div className="p-6 space-y-6" ref={dashboardRef}>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="p-6 space-y-8" ref={dashboardRef}>
+        <div className="export-ignore">
+          <FilterBar 
+            filters={filters} 
+            setFilters={setFilters} 
+            onClear={() => setFilters(INITIAL_FILTERS)} 
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
           {scorecards.map((item) => (
-            <Card key={item.label} className="border-[#30363d] bg-[#161b22]">
+            <Card key={item.label} className="border-[#30363d] bg-[#161b22] hover:border-emerald-500/50 transition-all">
               <CardContent className="p-6">
-                <p className="text-sm text-muted-foreground">{item.label}</p>
-                <p className="mt-1 text-2xl font-bold">{item.value}</p>
-                <div className="mt-1 flex items-center gap-1">
+                <p className="text-xs font-bold uppercase tracking-wider text-[#94a3b8]">{item.label}</p>
+                <p className="mt-2 text-3xl font-black text-white">{item.value}</p>
+                <div className="mt-2 flex items-center gap-1">
                   {item.up ? <TrendingUp className="h-3 w-3 text-emerald-500" /> : <TrendingDown className="h-3 w-3 text-red-500" />}
-                  <span className={cn("text-xs", item.up ? "text-emerald-500" : "text-red-500")}>{item.change}</span>
+                  <span className={cn("text-xs font-bold", item.up ? "text-emerald-500" : "text-red-500")}>{item.change}</span>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
 
-        <div className="space-y-4">
-          <h2 className="text-xl font-bold">Danh sách video Thương hiệu</h2>
+        {/* Leaderboards Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+           <Leaderboard 
+            title="TOP Sản phẩm (Brand)"
+            entityType="staff"
+            entries={productLeaderboard}
+            valueLabel={formatCurrency}
+          />
+          <Card className="border-[#30363d] bg-[#161b22] overflow-hidden">
+             <CardContent className="flex flex-col items-center justify-center p-12 text-center h-full gap-4">
+                <ShoppingBag className="w-12 h-12 text-primary/40" />
+                <div>
+                  <p className="font-bold text-white">Xếp hạng Hiệu quả Content</p>
+                  <p className="text-xs text-muted-foreground mt-1">Phân tích sâu về các kịch bản và format video mang lại chuyển đổi cao nhất.</p>
+                </div>
+             </CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-8 duration-1000">
+          <h2 className="text-xl font-black flex items-center gap-2">
+            <Tv className="w-5 h-5 text-emerald-500" />
+            Chi tiết video Thương hiệu ({videos.length})
+          </h2>
+          
           {loading ? (
-             <div className="h-64 flex items-center justify-center border border-[#30363d] rounded-2xl bg-[#161b22]">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+             <div className="h-64 flex flex-col items-center justify-center border border-[#30363d] rounded-2xl bg-[#161b22] gap-4">
+                <Loader2 className="animate-spin h-8 w-8 text-primary" />
+                <p className="text-sm text-[#94a3b8] uppercase font-bold tracking-tighter">Đang tải dữ liệu Thương hiệu...</p>
              </div>
           ) : videos.length === 0 ? (
-            <Card className="border-[#30363d] bg-[#161b22]">
-              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-                <Tv className="h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-lg font-medium">Chưa có dữ liệu video Thương hiệu</p>
-                <p className="text-sm text-muted-foreground max-w-xs mx-auto">Vui lòng upload dữ liệu Seller Center chọn nguồn là 'Brand'</p>
+            <Card className="border-[#30363d] bg-[#161b22] border-dashed">
+              <CardContent className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
+                  <Tv className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <p className="text-lg font-bold">Chưa có dữ liệu video Thương hiệu</p>
+                <p className="text-sm text-muted-foreground max-w-xs mx-auto mt-2">Thay đổi lọc hoặc upload thêm dữ liệu nguồn 'Brand'</p>
+                <Button variant="outline" className="mt-6 border-[#30363d]" onClick={() => setFilters(INITIAL_FILTERS)}>
+                  Xóa tất cả bộ lọc
+                </Button>
               </CardContent>
             </Card>
           ) : (
-            <VideoTable videos={videos} users={users} />
+            <VideoTable videos={videos} users={users} onRefresh={fetchData} />
           )}
         </div>
       </div>

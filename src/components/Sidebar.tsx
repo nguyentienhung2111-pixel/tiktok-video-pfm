@@ -24,6 +24,7 @@ const mainMenu = [
 const adminMenu = [
   { href: '/admin/upload', label: 'Upload dữ liệu', icon: Upload },
   { href: '/admin/products', label: 'Sản phẩm', icon: Package },
+  { href: '/admin/koc-mapping', label: 'Booking KOC', icon: Users },
   { href: '/admin/tags', label: 'Quản lý Tag', icon: Tags },
   { href: '/admin/accounts', label: 'Tài khoản', icon: Users },
   { href: '/admin/settings', label: 'Cài đặt', icon: Settings },
@@ -41,7 +42,10 @@ export default function Sidebar() {
 
   const initials = user?.display_name
     ? user.display_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
-    : 'U';
+    : 'AD';
+
+  const displayName = user?.display_name || 'Admin DECOCO';
+  const displayRole = roleLabel || 'Quản trị viên';
 
   return (
     <aside className="fixed left-0 top-0 z-40 h-screen w-60 bg-card border-r border-border flex flex-col">
@@ -120,10 +124,12 @@ export default function Sidebar() {
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
-            <p className="truncate text-sm font-medium text-foreground">
-              {user?.display_name || 'User'}
+            <p className="truncate text-sm font-bold text-foreground">
+              {displayName}
             </p>
-            <p className="text-[11px] text-muted-foreground">{roleLabel}</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
+              {displayRole}
+            </p>
           </div>
           <Button
             variant="ghost"

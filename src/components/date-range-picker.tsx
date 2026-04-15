@@ -49,6 +49,20 @@ export function DateRangePicker({
         to: startOfToday(),
       }),
     },
+    {
+      label: '90 ngày qua',
+      getValue: () => ({
+        from: subDays(startOfToday(), 90),
+        to: startOfToday(),
+      }),
+    },
+    {
+      label: 'Tất cả thời gian',
+      getValue: () => ({
+        from: subDays(startOfToday(), 365 * 2), // 2 years back
+        to: addDays(startOfToday(), 1),
+      }),
+    },
   ];
 
   const handleSelectPreset = (getValue: () => DateRange) => {

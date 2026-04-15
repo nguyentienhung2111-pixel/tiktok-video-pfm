@@ -74,12 +74,16 @@ const COLUMN_MAPPING: Record<string, string | undefined> = {
   'Gán cho': 'assigned_user_id',
   'Thẻ': 'tags',
   
-  // Legend fallbacks
   'video_id': 'video_id',
   'published_at': 'published_at',
   'gmv': 'gmv',
   'views': 'views',
-  'orders': 'orders'
+  'orders': 'orders',
+  'Sản phẩm': 'product_name',
+  'Đơn hàng': 'orders',
+  'Tên nhà sáng tạo': 'creator_name',
+  'ID video': 'video_id',
+  'Ngày': 'published_at',
 };
 
 function parseNum(val: unknown): number {
@@ -109,17 +113,27 @@ function parseDate(val: unknown): string | null {
   if (typeof val === 'number') {
     const excelBaseDate = new Date(1899, 11, 30);
     const date = new Date(excelBaseDate.getTime() + val * 24 * 60 * 60 * 1000);
-    if (!isNaN(date.getTime())) return date.toISOString();
+    if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
   }
 
-  if (val instanceof Date) return val.toISOString();
+  if (val instanceof Date) return val.toISOString().split('T')[0];
   
   const s = String(val).trim();
   if (!s) return null;
   
   const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.toISOString();
+  if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
   
+  // Handle YYYY-MM-DD
+  const ymdParts = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(.*)$/);
+  if (ymdParts) {
+    const year = parseInt(ymdParts[1], 10);
+    const month = parseInt(ymdParts[2], 10) - 1;
+    const day = parseInt(ymdParts[3], 10);
+    const date = new Date(year, month, day, 12, 0, 0);
+    if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
+  }
+
   // Handle DD/MM/YYYY
   const parts = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(.*)$/);
   if (parts) {
@@ -127,25 +141,20 @@ function parseDate(val: unknown): string | null {
     const month = parseInt(parts[2], 10) - 1;
     const year = parseInt(parts[3], 10);
     const date = new Date(year, month, day, 12, 0, 0);
-    
-    if (parts[4]) {
-      const timeMatch = parts[4].match(/(\d{1,2})[:](\d{1,2})([:](\d{1,2}))?/);
-      if (timeMatch) {
-        date.setHours(parseInt(timeMatch[1], 10));
-        date.setMinutes(parseInt(timeMatch[2], 10));
-        if (timeMatch[4]) date.setSeconds(parseInt(timeMatch[4], 10));
-      }
-    }
-    
-    if (!isNaN(date.getTime())) return date.toISOString();
+    if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
   }
   
   return null;
 }
 
-function mapRow(row: Record<string, unknown>, sourceType: SourceType): Record<string, unknown> {
+function mapRow(
+  row: Record<string, unknown>, 
+  sourceType: SourceType, 
+  mappings: { raw_name: string, product_id: string }[]
+): Record<string, unknown> {
   const mapped: Record<string, unknown> = {
     source_type: sourceType,
+    product_id: null,
     likes: 0,
     comments: 0,
     shares: 0,
@@ -175,6 +184,15 @@ function mapRow(row: Record<string, unknown>, sourceType: SourceType): Record<st
       mapped[field] = parseDate(value);
     } else {
       mapped[field] = parseNum(value);
+    }
+  }
+
+  // Auto-map product_id from product_sku_mappings
+  if (mapped['product_name']) {
+    const rawName = String(mapped['product_name']).toLowerCase().trim();
+    const mapping = mappings.find(m => m.raw_name.toLowerCase().trim() === rawName);
+    if (mapping) {
+      mapped['product_id'] = mapping.product_id;
     }
   }
 
@@ -215,7 +233,12 @@ export default function UploadForm() {
           return;
         }
 
-        const mappedVideos = jsonData.map(row => mapRow(row, sourceType));
+        // Fetch existing SKU mappings for auto-linkage
+        const { data: skuMappings } = await supabase
+          .from('product_sku_mappings')
+          .select('raw_name, product_id');
+
+        const mappedVideos = jsonData.map(row => mapRow(row, sourceType, skuMappings || []));
 
         const { error } = await supabase
           .from('videos')
