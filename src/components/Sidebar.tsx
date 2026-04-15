@@ -3,15 +3,18 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { 
-  LayoutGrid, 
-  FileText, 
-  Users, 
-  BookOpen, 
-  UploadCloud, 
-  Settings, 
-  Sparkles, 
-  LogOut 
+import {
+  LayoutGrid,
+  FileText,
+  Users,
+  BookOpen,
+  UploadCloud,
+  Settings,
+  Sparkles,
+  LogOut,
+  Package,
+  Tag,
+  UserCog
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -28,6 +31,9 @@ const navItems = [
   { label: 'Tag Guideline', href: '/guideline', icon: BookOpen },
   { label: 'QUẢN TRỊ', type: 'label' },
   { label: 'Upload dữ liệu', href: '/admin/upload', icon: UploadCloud },
+  { label: 'Sản phẩm', href: '/admin/products', icon: Package },
+  { label: 'Quản lý Tag', href: '/admin/tags', icon: Tag },
+  { label: 'Tài khoản', href: '/admin/accounts', icon: UserCog },
   { label: 'Cài đặt', href: '/admin/settings', icon: Settings },
 ];
 
@@ -43,7 +49,7 @@ export default function Sidebar() {
         <span>DECOCO</span>
       </div>
 
-      <nav className="flex-1">
+      <nav className="flex-1 overflow-y-auto">
         <ul>
           {navItems.map((item, idx) => {
             if (item.type === 'label') {
@@ -63,8 +69,8 @@ export default function Sidebar() {
                   href={item.href!}
                   className={cn(
                     "flex items-center px-4 py-3 rounded-xl transition-all font-medium text-[0.9375rem]",
-                    isActive 
-                      ? "bg-gradient-to-r from-[#4c1d95] to-[#7c3aed] text-white shadow-lg shadow-purple-900/30" 
+                    isActive
+                      ? "bg-gradient-to-r from-[#4c1d95] to-[#7c3aed] text-white shadow-lg shadow-purple-900/30"
                       : "text-[#94a3b8] hover:bg-purple-900/10 hover:text-white"
                   )}
                 >
@@ -79,10 +85,10 @@ export default function Sidebar() {
 
       <div className="mt-auto flex items-center gap-3 p-4 bg-black/20 rounded-2xl">
         <div className="w-9 h-9 bg-[#8b5cf6] rounded-full flex items-center justify-center font-bold text-[0.8rem]">
-          TH
+          AD
         </div>
         <div className="flex-1">
-          <div className="text-[0.85rem] font-semibold">Nguyễn Tiến Hưng</div>
+          <div className="text-[0.85rem] font-semibold">Admin DECOCO</div>
           <div className="text-[0.7rem] text-[#94a3b8]">Quản trị viên</div>
         </div>
         <button className="text-[#94a3b8] hover:text-white transition-colors">
