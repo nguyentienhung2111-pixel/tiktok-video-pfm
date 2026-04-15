@@ -65,7 +65,7 @@ export function DateRangePicker({
             variant={'outline'}
             size="sm"
             className={cn(
-              'w-fit justify-start text-left font-normal bg-background border-[#30363d] text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+              'w-fit justify-start text-left font-normal bg-background border-[#30363d] text-foreground hover:bg-accent hover:text-accent-foreground',
               !date && 'text-muted-foreground'
             )}
           >
@@ -83,29 +83,36 @@ export function DateRangePicker({
             )}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0 flex flex-row bg-[#161b22] border-[#30363d]" align="end">
-          <div className="flex flex-col border-r border-[#30363d] p-2 space-y-1">
+        <PopoverContent 
+          className="w-auto p-0 flex flex-col md:flex-row bg-[#161b22] border border-[#30363d] shadow-2xl z-50" 
+          align="end"
+          sideOffset={8}
+        >
+          <div className="flex flex-col border-b md:border-b-0 md:border-r border-[#30363d] p-3 space-y-1 min-w-[140px]">
+            <p className="text-[10px] uppercase font-bold text-muted-foreground px-2 mb-2 tracking-wider">Lọc nhanh</p>
             {presets.map((preset) => (
               <Button
                 key={preset.label}
                 variant="ghost"
                 size="sm"
-                className="justify-start font-normal hover:bg-[#1f2937]"
+                className="justify-start font-normal hover:bg-[#1f2937] text-foreground"
                 onClick={() => handleSelectPreset(preset.getValue)}
               >
                 {preset.label}
               </Button>
             ))}
           </div>
-          <Calendar
-            initialFocus
-            mode="range"
-            defaultMonth={date?.from}
-            selected={date}
-            onSelect={setDate}
-            numberOfMonths={2}
-            locale={vi}
-          />
+          <div className="p-1">
+            <Calendar
+              initialFocus
+              mode="range"
+              defaultMonth={date?.from}
+              selected={date}
+              onSelect={setDate}
+              numberOfMonths={2}
+              locale={vi}
+            />
+          </div>
         </PopoverContent>
       </Popover>
     </div>

@@ -32,7 +32,7 @@ const adminMenu = [
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, loading } = useUser();
+  const { user, loading, roleLabel } = useUser();
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     router.push('/login');
@@ -42,14 +42,6 @@ export default function Sidebar() {
   const initials = user?.display_name
     ? user.display_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
     : 'U';
-
-  const roleLabel = {
-    admin: 'Quản trị viên',
-    leader_content: 'Leader Content',
-    leader_booking: 'Leader Booking',
-    staff_content: 'Nhân viên Content',
-    staff_booking: 'Nhân viên Booking',
-  }[user?.role || 'staff_content'] || 'Nhân viên';
 
   return (
     <aside className="fixed left-0 top-0 z-40 h-screen w-60 bg-card border-r border-border flex flex-col">

@@ -85,7 +85,16 @@ export default function DashboardPage() {
     if (dashboardRef.current === null) return;
     
     try {
-      const dataUrl = await toPng(dashboardRef.current, { cacheBust: true, backgroundColor: '#0d1117' });
+      const dataUrl = await toPng(dashboardRef.current, { 
+        cacheBust: true, 
+        backgroundColor: '#0d1117',
+        pixelRatio: 2,
+        // Improved filter to exclude interactive elements that might cause issues
+        filter: (node: HTMLElement) => {
+          const exclusionClasses = ['DateRangePicker', 'Button', 'export-ignore'];
+          return !exclusionClasses.some(cls => node.classList?.contains(cls));
+        }
+      });
       const link = document.createElement('a');
       link.download = `report-dashboard-${new Date().getTime()}.png`;
       link.href = dataUrl;
@@ -103,8 +112,8 @@ export default function DashboardPage() {
       >
         <div className="flex items-center gap-3">
           <DateRangePicker date={date} setDate={setDate} />
-          <Button size="sm" className="bg-primary text-primary-foreground" onClick={handleExport}>
-            <FileDown className="mr-2 h-4 w-4" />
+          <Button size="sm" className="bg-primary text-primary-foreground export-ignore" onClick={handleExport}>
+            <FileDown className="mr-2 h-4 w-4 " />
             Xuất báo cáo (Ảnh)
           </Button>
         </div>

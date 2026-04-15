@@ -11,7 +11,7 @@ interface DashboardHeaderProps {
 }
 
 export default function DashboardHeader({ title, subtitle, children }: DashboardHeaderProps) {
-  const { user } = useUser();
+  const { user, roleLabel } = useUser();
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur">
@@ -27,7 +27,7 @@ export default function DashboardHeader({ title, subtitle, children }: Dashboard
           <div className="flex flex-col items-end">
             <span className="text-sm font-medium">{user?.display_name || 'Admin DECOCO'}</span>
             <span className="text-[11px] text-muted-foreground uppercase tracking-tight">
-              {user?.role === 'admin' ? 'Quản trị viên' : user?.role || 'Nhân viên'}
+              {roleLabel}
             </span>
           </div>
           <Avatar className="h-9 w-9 border border-border">

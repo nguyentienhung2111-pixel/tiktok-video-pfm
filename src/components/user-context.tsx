@@ -12,10 +12,19 @@ interface UserProfile {
 interface UserContextType {
   user: UserProfile | null;
   loading: boolean;
+  roleLabel: string;
   refreshUser: () => Promise<void>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
+
+const ROLE_DISPLAY: Record<string, string> = {
+  'admin': 'Quản trị viên',
+  'leader_content': 'Leader Content',
+  'leader_booking': 'Leader Booking',
+  'staff_content': 'Nhân viên Content',
+  'staff_booking': 'Nhân viên Booking',
+};
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -32,35 +41,46 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('display_name, role, avatar_url')
+        .select('*')
         .eq('id', session.user.id)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching user profile:', error);
+        // Fail gracefully to auth data if profile missing, but mark role unknown
+        setUser({
+          display_name: session.user.email?.split('@')[0] || 'User',
+          role: 'unknown'
+        });
+        return;
+      }
 
-      setUser(profile || { 
-        display_name: session.user.email?.split('@')[0] || 'User', 
-        role: 'staff_content' 
-      });
+      setUser(profile);
     } catch (error) {
-      console.error('Error fetching user profile:', error);
+      console.error('User context exception:', error);
     } finally {
       setLoading(false);
     }
   };
 
+  const roleLabel = user ? ROLE_DISPLAY[user.role] || user.role : '';
+
   useEffect(() => {
     fetchUserProfile();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      fetchUserProfile();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) fetchUserProfile();
+      else {
+        setUser(null);
+        setLoading(false);
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
   return (
-    <UserContext.Provider value={{ user, loading, refreshUser: fetchUserProfile }}>
+    <UserContext.Provider value={{ user, loading, roleLabel, refreshUser: fetchUserProfile }}>
       {children}
     </UserContext.Provider>
   );

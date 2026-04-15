@@ -8,98 +8,136 @@ import { supabase } from '@/lib/supabase';
 type SourceType = 'brand' | 'koc';
 
 // Vietnamese TikTok Seller Center column header mapping
-const BRAND_COL_MAP: Record<string, string> = {
-  // Video ID
-  'Video ID': 'video_id',
+// Vietnamese TikTok Seller Center column header mapping
+const COLUMN_MAPPING: Record<string, string> = {
+  'Tên nhà sáng tạo': 'creator_name',
+  'ID nhà sáng tạo': 'creator_id',
+  'Thông tin video': 'video_title',
   'ID video': 'video_id',
-  // Creator
+  'Thời gian': 'published_at',
+  'Sản phẩm': 'product_name',
+  'VV': 'views',
+  'Lượt thích': 'likes',
+  'Bình luận': 'comments',
+  'Lượt chia sẻ': 'shares',
+  'Người theo dõi mới': 'new_followers',
+  'Đơn hàng': 'orders',
+  'Số món bán ra từ video': 'items_sold',
+  'Tổng giá trị hàng hóa (Video) (₫)': 'gmv',
+  'GPM (₫)': 'gpm',
+  'GMV quy ra từ video bán hàng (₫)': 'gmv',
+  'Tỷ lệ nhấp (Video)': 'ctr',
+  'Tỷ lệ xem hết video': 'completion_rate',
+  'Tỷ lệ nhấp đến đặt hàng (Video)': 'click_to_order_rate',
+  'Chẩn đoán': 'diagnosis',
+  'Lượt hiển thị': 'impressions',
+  'Số lượng người xem video': 'reach',
+  // Legacy/English fallbacks
   'Username': 'creator_name',
   'Tên người dùng': 'creator_name',
-  'Creator': 'creator_name',
-  'Tên creator': 'creator_name',
-  // Creator ID
-  'Creator ID': 'creator_id',
   'ID Creator': 'creator_id',
-  // Title
   'Video title': 'video_title',
   'Tiêu đề video': 'video_title',
-  'Title': 'video_title',
-  // Published At
   'Video post time': 'published_at',
   'Ngày đăng': 'published_at',
   'Thời gian đăng': 'published_at',
-  'Published At': 'published_at',
-  // Product
-  'Product name': 'product_name',
   'Tên sản phẩm': 'product_name',
-  'Product Name': 'product_name',
-  // Views
   'Video views': 'views',
   'Lượt xem': 'views',
-  'Views': 'views',
-  // Likes
-  'Likes': 'likes',
-  'Lượt thích': 'likes',
-  // Comments
-  'Comments': 'comments',
-  'Bình luận': 'comments',
-  // Shares
-  'Shares': 'shares',
-  'Chia sẻ': 'shares',
-  // New followers
-  'New followers': 'new_followers',
-  'Người theo dõi mới': 'new_followers',
-  'Follow mới': 'new_followers',
-  // Orders
-  'Orders': 'orders',
-  'Đơn hàng': 'orders',
-  'Số đơn': 'orders',
-  // GMV
-  'GMV': 'gmv',
-  'Doanh thu': 'gmv',
-  // GPM
-  'GPM': 'gpm',
-  // CTR
-  'CTR': 'ctr',
-  'Tỷ lệ nhấp': 'ctr',
-  // Completion rate
   'Video completion rate': 'completion_rate',
   'Tỷ lệ xem hết': 'completion_rate',
-  'Xem hết': 'completion_rate',
-  // Conversion rate
-  'Conversion rate': 'conversion_rate',
-  'Tỷ lệ chuyển đổi': 'conversion_rate',
-  // Click to order rate
-  'Click-to-order rate': 'click_to_order_rate',
   'Nhấp sang đặt hàng': 'click_to_order_rate',
-  // Video duration
-  'Video duration': 'video_duration_sec',
-  'Thời lượng video': 'video_duration_sec',
-  // Reach
   'Reach': 'reach',
   'Tiếp cận': 'reach',
-  // Impressions
   'Impressions': 'impressions',
   'Hiển thị': 'impressions',
-  // Diagnosis
-  'Video diagnosis': 'diagnosis',
-  'Chẩn đoán': 'diagnosis',
 };
 
 function parseNum(val: unknown): number {
   if (val === null || val === undefined || val === '') return 0;
-  const s = String(val).replace(/[^\d.-]/g, '');
+  if (typeof val === 'number') return val;
+  
+  let s = String(val).trim();
+  // Remove currency and other non-numeric symbols but keep comma and dot
+  s = s.replace(/[₫%]/g, '').trim();
+  
+  // Logic for dots and commas:
+  // If we have "1.000,00" -> 1000.00
+  // If we have "1,000.00" -> 1000.00
+  // If we have "1.000" (Vietnamese for thousand) -> 1000
+  // If we have "1,000" (International for thousand) -> 1000
+  
+  // Count counts
+  const dotCount = (s.match(/\./g) || []).length;
+  const commaCount = (s.match(/,/g) || []).length;
+  
+  if (dotCount > 0 && commaCount > 0) {
+    // Both exist. Usually 1.000,00 or 1,000.00.
+    // Assume the last one is the decimal separator.
+    const dotIndex = s.lastIndexOf('.');
+    const commaIndex = s.lastIndexOf(',');
+    if (dotIndex > commaIndex) {
+      // 1,000.00
+      s = s.replace(/,/g, '');
+    } else {
+      // 1.000,00
+      s = s.replace(/\./g, '').replace(/,/g, '.');
+    }
+  } else if (commaCount > 1) {
+    // 1,000,000 -> 1000000
+    s = s.replace(/,/g, '');
+  } else if (dotCount > 1) {
+    // 1.000.000 -> 1000000
+    s = s.replace(/\./g, '');
+  } else if (commaCount === 1) {
+    // 1000,50 -> 1000.50
+    s = s.replace(/,/g, '.');
+  }
+  // If only one dot remains, it's already in the right format for parseFloat if it's a decimal.
+  // But wait, if it's "1.000" (thousand), parseFloat will make it "1".
+  // This is the trickiest case in Vietnamese vs International.
+  // However, most TikTok reports for GMV will have large numbers.
+  // If the string represents a large number like "1.500", it's probably 1500.
+  // But for rates like "0.5", it's 0.5.
+  
   const n = parseFloat(s);
   return isNaN(n) ? 0 : n;
 }
 
 function parseDate(val: unknown): string | null {
   if (!val) return null;
+  if (val instanceof Date) return val.toISOString();
+  
   const s = String(val).trim();
   if (!s) return null;
-  // Try to parse common formats
+  
+  // Try standard Date parsing first (handles ISO, some Regional)
   const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  if (!isNaN(d.getTime())) return d.toISOString();
+  
+  // Handle DD/MM/YYYY format commonly used in Vietnamese Excel exports
+  const parts = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(.*)$/);
+  if (parts) {
+    const day = parseInt(parts[1], 10);
+    const month = parseInt(parts[2], 10) - 1;
+    const year = parseInt(parts[3], 10);
+    
+    // Create date at noon to avoid timezone shifts during initialization
+    const date = new Date(year, month, day, 12, 0, 0);
+    
+    // Parse time if present (e.g., " 14:30")
+    if (parts[4]) {
+      const timeMatch = parts[4].match(/(\d{1,2})[:](\d{1,2})([:](\d{1,2}))?/);
+      if (timeMatch) {
+        date.setHours(parseInt(timeMatch[1], 10));
+        date.setMinutes(parseInt(timeMatch[2], 10));
+        if (timeMatch[4]) date.setSeconds(parseInt(timeMatch[4], 10));
+      }
+    }
+    
+    if (!isNaN(date.getTime())) return date.toISOString();
+  }
+  
   return null;
 }
 
@@ -122,23 +160,22 @@ function mapRow(row: Record<string, unknown>, sourceType: SourceType): Record<st
     impressions: 0,
     views: 0,
     tags: [],
+    raw_data: row // Store original row data for transparency
   };
 
   for (const [colHeader, value] of Object.entries(row)) {
-    const field = BRAND_COL_MAP[colHeader.trim()];
+    const field = COLUMN_MAPPING[colHeader.trim()];
     if (!field) continue;
 
-    if (field === 'video_id' || field === 'creator_name' || field === 'creator_id' || field === 'video_title' || field === 'product_name' || field === 'diagnosis') {
+    if (['video_id', 'creator_name', 'creator_id', 'video_title', 'product_name', 'diagnosis'].includes(field)) {
       mapped[field] = value ? String(value).trim() : null;
     } else if (field === 'published_at') {
       mapped[field] = parseDate(value);
     } else {
-      // Numeric field — strip % signs etc.
       mapped[field] = parseNum(value);
     }
   }
 
-  // Require video_id — generate fallback
   if (!mapped['video_id']) {
     mapped['video_id'] = `gen_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   }
