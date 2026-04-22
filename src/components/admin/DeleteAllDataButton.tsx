@@ -21,11 +21,11 @@ export default function DeleteAllDataButton() {
 
     try {
       // Delete all rows from videos table
-      // Supabase requires a filter for delete, so we use gte id 0 to match all
+      // Use neq on a non-nullable field to match all rows
       const { error } = await supabase
         .from('videos')
         .delete()
-        .gte('id', 0);
+        .neq('video_id', '');
 
       if (error) throw error;
 
@@ -33,7 +33,7 @@ export default function DeleteAllDataButton() {
       const { error: historyError } = await supabase
         .from('upload_history')
         .delete()
-        .gte('id', 0);
+        .neq('file_name', '');
 
       if (historyError) {
         console.warn('Could not clear upload_history:', historyError);
