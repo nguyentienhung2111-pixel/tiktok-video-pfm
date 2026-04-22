@@ -14,7 +14,7 @@ import { VideoTable } from '@/components/VideoTable';
 import DashboardHeader from '@/components/DashboardHeader';
 import { DateRangePicker } from '@/components/date-range-picker';
 import { DateRange } from 'react-day-picker';
-import { subDays, startOfToday } from 'date-fns';
+import { subDays, startOfToday, format } from 'date-fns';
 import { toPng } from 'html-to-image';
 import FilterBar, { FilterState } from '@/components/FilterBar';
 
@@ -39,80 +39,51 @@ export default function DashboardPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalCount, setTotalCount] = useState(0);
+  const [paginatedVideos, setPaginatedVideos] = useState<Video[]>([]);
 
   const dashboardRef = useRef<HTMLDivElement>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      let query = supabase
+      // 1. Fetch Summary Data (for scorecards)
+      let summaryQuery = supabase
         .from('videos')
-        .select('*', { count: 'exact' });
+        .select('*');
 
-      // Apply Date Filter (Using YYYY-MM-DD format for DATE column)
-      if (date?.from) {
-        const fromDate = new Date(date.from);
-        // Ensure we handle local date correctly for the query
-        const year = fromDate.getFullYear();
-        const month = String(fromDate.getMonth() + 1).padStart(2, '0');
-        const day = String(fromDate.getDate()).padStart(2, '0');
-        query = query.gte('published_at', `${year}-${month}-${day}`);
-      }
-      if (date?.to) {
-        const toDate = new Date(date.to);
-        const year = toDate.getFullYear();
-        const month = String(toDate.getMonth() + 1).padStart(2, '0');
-        const day = String(toDate.getDate()).padStart(2, '0');
-        query = query.lte('published_at', `${year}-${month}-${day}`);
-      }
+      if (date?.from) summaryQuery = summaryQuery.gte('published_at', format(date.from, 'yyyy-MM-dd'));
+      if (date?.to) summaryQuery = summaryQuery.lte('published_at', format(date.to, 'yyyy-MM-dd'));
+      if (filters.sourceType !== 'all') summaryQuery = summaryQuery.eq('source_type', filters.sourceType);
+      if (filters.productId) summaryQuery = summaryQuery.eq('product_id', filters.productId);
+      if (filters.minGMV) summaryQuery = summaryQuery.gte('gmv', parseInt(filters.minGMV));
+      if (filters.minViews) summaryQuery = summaryQuery.gte('views', parseInt(filters.minViews));
+      if (filters.search) summaryQuery = summaryQuery.ilike('video_title', `%${filters.search}%`);
 
-      // Apply Source Filter
-      if (filters.sourceType !== 'all') {
-        query = query.eq('source_type', filters.sourceType);
-      }
+      const { data: summaryData, error: summaryError } = await summaryQuery.limit(5000);
+      if (summaryError) throw summaryError;
+      setVideos((summaryData as Video[]) || []);
 
-      // Apply Product Filter
-      if (filters.productId) {
-        query = query.eq('product_id', filters.productId);
-      }
+      // 2. Fetch Paginated Data (for table)
+      let tableQuery = supabase
+        .from('videos')
+        .select('*', { count: 'exact' })
+        .order('gmv', { ascending: false, nullsFirst: false });
 
-      // Apply Metrics Filter
-      if (filters.minGMV) {
-        query = query.gte('gmv', parseInt(filters.minGMV));
-      }
-      if (filters.minViews) {
-        query = query.gte('views', parseInt(filters.minViews));
-      }
+      if (date?.from) tableQuery = tableQuery.gte('published_at', format(date.from, 'yyyy-MM-dd'));
+      if (date?.to) tableQuery = tableQuery.lte('published_at', format(date.to, 'yyyy-MM-dd'));
+      if (filters.sourceType !== 'all') tableQuery = tableQuery.eq('source_type', filters.sourceType);
+      if (filters.productId) tableQuery = tableQuery.eq('product_id', filters.productId);
+      if (filters.minGMV) tableQuery = tableQuery.gte('gmv', parseInt(filters.minGMV));
+      if (filters.minViews) tableQuery = tableQuery.gte('views', parseInt(filters.minViews));
+      if (filters.search) tableQuery = tableQuery.ilike('video_title', `%${filters.search}%`);
 
-      // Apply Search Filter (Title or Creator)
-      if (filters.search) {
-        query = query.or(`video_title.ilike.%${filters.search}%,creator_name.ilike.%${filters.search}%`);
-      }
-
-      // Apply Tags Filter
-      if (filters.tagIds.length > 0) {
-        const { data: tagData } = await supabase
-          .from('tags')
-          .select('name')
-          .in('id', filters.tagIds);
-        
-        const tagNames = tagData?.map(t => t.name) || [];
-        if (tagNames.length > 0) {
-          query = query.overlaps('tags', tagNames);
-        }
-      }
-
-      // Apply Pagination
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
+      const { data: videoData, error: videoError, count } = await tableQuery.range(from, to);
       
-      const { data: videoData, error: videoError, count } = await query
-        .order('gmv', { ascending: false })
-        .range(from, to);
-        
       if (videoError) throw videoError;
-
       if (count !== null) setTotalCount(count);
+      setPaginatedVideos((videoData as Video[]) || []);
 
       const { data: userData, error: userError } = await supabase
         .from('profiles')
@@ -120,7 +91,6 @@ export default function DashboardPage() {
         .eq('is_active', true);
       if (userError) throw userError;
 
-      setVideos((videoData as Video[]) || []);
       setUsers((userData as Profile[]) || []);
     } catch (error) {
       console.error('Lỗi khi tải dữ liệu:', error);
@@ -235,7 +205,7 @@ export default function DashboardPage() {
               <Loader2 className="animate-spin h-8 w-8 text-primary" />
               <p className="text-sm text-[#94a3b8] font-medium">Đang lọc dữ liệu...</p>
             </div>
-          ) : videos.length === 0 ? (
+          ) : paginatedVideos.length === 0 ? (
             <Card className="border-[#30363d] bg-[#161b22] border-dashed">
               <CardContent className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
@@ -252,7 +222,7 @@ export default function DashboardPage() {
             </Card>
           ) : (
             <>
-              <VideoTable videos={videos} users={users} onRefresh={fetchData} />
+              <VideoTable videos={paginatedVideos} users={users} onRefresh={fetchData} />
               
               {/* Pagination UI */}
               <div className="flex flex-col sm:flex-row justify-between items-center gap-4 py-4 px-2 border-t border-[#30363d] export-ignore">

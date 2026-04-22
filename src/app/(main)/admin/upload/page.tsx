@@ -10,6 +10,11 @@ const UploadForm = dynamic(() => import('@/components/admin/UploadForm'), {
   loading: () => <div className="p-20 text-center animate-pulse text-[#94a3b8]">Đang khởi tạo trình tải lên...</div>
 });
 
+const ReprocessDataButton = dynamic(() => import('@/components/admin/ReprocessDataButton'), {
+  ssr: false,
+  loading: () => <div className="p-6 text-center animate-pulse text-[#94a3b8]">...</div>
+});
+
 export default function UploadPage() {
   return (
     <div className="flex flex-col min-h-screen">
@@ -20,6 +25,11 @@ export default function UploadPage() {
 
       <div className="p-12 max-w-4xl animate-in fade-in duration-500">
         <UploadForm />
+
+        {/* Re-process existing data section */}
+        <div className="mt-8">
+          <ReprocessDataButton />
+        </div>
 
         <div className="mt-10 grid grid-cols-2 gap-6">
           <div className="p-6 border border-[#30363d] rounded-xl bg-white/5">
@@ -40,3 +50,4 @@ export default function UploadPage() {
     </div>
   );
 }
+

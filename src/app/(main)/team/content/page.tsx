@@ -12,7 +12,7 @@ import { useUser } from '@/components/user-context';
 import DashboardHeader from '@/components/DashboardHeader';
 import { DateRangePicker } from '@/components/date-range-picker';
 import { DateRange } from 'react-day-picker';
-import { subDays, startOfToday } from 'date-fns';
+import { subDays, startOfToday, format } from 'date-fns';
 import { toPng } from 'html-to-image';
 import FilterBar, { FilterState } from '@/components/FilterBar';
 import { Leaderboard, LeaderboardEntry } from '@/components/Leaderboard';
@@ -46,47 +46,44 @@ export default function ContentTeamPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      let query = supabase
+      // 1. Fetch Summary Data (for scorecards and leaderboards)
+      // Use a fresh query for summary
+      let summaryQuery = supabase
         .from('videos')
-        .select('*', { count: 'exact' })
+        .select('*')
         .eq('source_type', 'brand');
 
-      // Apply Date Filter (Using YYYY-MM-DD format for DATE column)
-      if (date?.from) {
-        const fromDate = new Date(date.from);
-        const year = fromDate.getFullYear();
-        const month = String(fromDate.getMonth() + 1).padStart(2, '0');
-        const day = String(fromDate.getDate()).padStart(2, '0');
-        query = query.gte('published_at', `${year}-${month}-${day}`);
-      }
-      if (date?.to) {
-        const toDate = new Date(date.to);
-        const year = toDate.getFullYear();
-        const month = String(toDate.getMonth() + 1).padStart(2, '0');
-        const day = String(toDate.getDate()).padStart(2, '0');
-        query = query.lte('published_at', `${year}-${month}-${day}`);
-      }
+      // Apply same filters to summary
+      if (date?.from) summaryQuery = summaryQuery.gte('published_at', format(date.from, 'yyyy-MM-dd'));
+      if (date?.to) summaryQuery = summaryQuery.lte('published_at', format(date.to, 'yyyy-MM-dd'));
+      if (filters.productId) summaryQuery = summaryQuery.eq('product_id', filters.productId);
+      if (filters.minGMV) summaryQuery = summaryQuery.gte('gmv', parseInt(filters.minGMV));
+      if (filters.minViews) summaryQuery = summaryQuery.gte('views', parseInt(filters.minViews));
+      if (filters.search) summaryQuery = summaryQuery.ilike('video_title', `%${filters.search}%`);
 
-      if (filters.productId) query = query.eq('product_id', filters.productId);
-      if (filters.minGMV) query = query.gte('gmv', parseInt(filters.minGMV));
-      if (filters.minViews) query = query.gte('views', parseInt(filters.minViews));
-      if (filters.search) {
-        query = query.or(`video_title.ilike.%${filters.search}%`);
-      }
-
-      // Fetch ALL for summary/leaderboards (limit to 5000 to avoid crash)
-      const { data: summaryData, error: summaryError } = await query.limit(5000);
+      const { data: summaryData, error: summaryError } = await summaryQuery.limit(5000);
       if (summaryError) throw summaryError;
       setVideos((summaryData as Video[]) || []);
 
-      // Fetch Paginated for table
+      // 2. Fetch Paginated Data (for table)
+      let tableQuery = supabase
+        .from('videos')
+        .select('*', { count: 'exact' })
+        .eq('source_type', 'brand')
+        .order('gmv', { ascending: false, nullsFirst: false });
+
+      // Apply same filters to table
+      if (date?.from) tableQuery = tableQuery.gte('published_at', format(date.from, 'yyyy-MM-dd'));
+      if (date?.to) tableQuery = tableQuery.lte('published_at', format(date.to, 'yyyy-MM-dd'));
+      if (filters.productId) tableQuery = tableQuery.eq('product_id', filters.productId);
+      if (filters.minGMV) tableQuery = tableQuery.gte('gmv', parseInt(filters.minGMV));
+      if (filters.minViews) tableQuery = tableQuery.gte('views', parseInt(filters.minViews));
+      if (filters.search) tableQuery = tableQuery.ilike('video_title', `%${filters.search}%`);
+
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
       
-      const { data: videoData, error: videoError, count } = await query
-        .order('gmv', { ascending: false })
-        .range(from, to);
-        
+      const { data: videoData, error: videoError, count } = await tableQuery.range(from, to);
       if (videoError) throw videoError;
 
       if (count !== null) setTotalCount(count);
@@ -248,7 +245,57 @@ export default function ContentTeamPage() {
               </CardContent>
             </Card>
           ) : (
-            <VideoTable videos={videos} users={users} onRefresh={fetchData} />
+            <>
+              <VideoTable videos={paginatedVideos} users={users} onRefresh={fetchData} />
+
+              {/* Pagination UI */}
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-4 py-4 px-2 border-t border-[#30363d] export-ignore">
+                <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                  {(page - 1) * pageSize + 1} - {Math.min(page * pageSize, totalCount)} của {totalCount} video
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <select 
+                    value={pageSize} 
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setPage(1);
+                    }}
+                    className="bg-[#161b22] border border-[#30363d] text-xs font-bold py-1.5 px-3 rounded-lg focus:outline-none appearance-none pr-8 relative cursor-pointer hover:border-primary/50 transition-colors"
+                  >
+                    <option value={10}>10/Trang</option>
+                    <option value={20}>20/Trang</option>
+                    <option value={50}>50/Trang</option>
+                  </select>
+
+                  <div className="flex items-center gap-1">
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="h-8 w-8 border-[#30363d] bg-transparent hover:bg-primary/10 disabled:opacity-30"
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    
+                    <span className="text-xs font-bold text-foreground px-2">
+                       Trang {page} / {Math.ceil(totalCount / pageSize)}
+                    </span>
+
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="h-8 w-8 border-[#30363d] bg-transparent hover:bg-primary/10 disabled:opacity-30"
+                      onClick={() => setPage(p => p + 1)}
+                      disabled={page >= Math.ceil(totalCount / pageSize)}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>

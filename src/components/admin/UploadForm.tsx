@@ -7,7 +7,17 @@ import { supabase } from '@/lib/supabase';
 
 type SourceType = 'brand' | 'koc';
 
+// Normalize a header string: trim, strip invisible/BOM chars, normalize Unicode
+function normalizeHeader(h: string): string {
+  return h
+    .normalize('NFC')
+    .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '') // Remove zero-width and NBSP chars
+    .replace(/\s+/g, ' ') // Collapse whitespace
+    .trim();
+}
+
 // Vietnamese TikTok Seller Center column header mapping
+// Keys MUST be normalized (use normalizeHeader before lookup)
 const COLUMN_MAPPING: Record<string, string | undefined> = {
   // English Headers
   'Video ID': 'video_id',
@@ -34,12 +44,20 @@ const COLUMN_MAPPING: Record<string, string | undefined> = {
   'GMV': 'gmv',
   'GMV (₫)': 'gmv',
   'GPM': 'gpm',
+  'GPM (₫)': 'gpm',
   'Engagement': 'engagement',
+  'New Followers': 'new_followers',
+  'CTR': 'ctr',
+  'Completion Rate': 'completion_rate',
+  'Click to Order Rate': 'click_to_order_rate',
+  'Unique Buyers': 'reach',
+  'Items Sold': 'items_sold',
   
   // Vietnamese Headers (TikTok Seller Center & Analytic Data)
   'Mã video': 'video_id',
   'ID video': 'video_id',
   'Nguồn': 'source_type',
+  'Tên nhà sáng tạo': 'creator_name',
   'Người sáng tạo': 'creator_name',
   'Tên tác giả': 'creator_name',
   'ID nhà sáng tạo': 'creator_id',
@@ -49,6 +67,7 @@ const COLUMN_MAPPING: Record<string, string | undefined> = {
   'Thời gian đăng': 'published_at',
   'Ngày đăng': 'published_at',
   'Thời gian': 'published_at',
+  'Ngày': 'published_at',
   'Tên sản phẩm': 'product_name',
   'Sản phẩm': 'product_name',
   'ID sản phẩm': 'product_id',
@@ -61,36 +80,51 @@ const COLUMN_MAPPING: Record<string, string | undefined> = {
   'Đơn hàng': 'orders',
   'Số đơn hàng': 'orders',
   'Số lượng đơn hàng': 'orders',
-  'Số món bán ra từ video': 'orders', 
-  'Tổng giá trị hàng hóa (Video) (₫)': 'gmv',
+  'Đơn đặt hàng': 'orders',
+  'Số món bán ra từ video': 'items_sold',
+  'Tổng giá trị hàng hóa (Video) (₫)': 'total_merchandise_value',
   'GMV quy ra từ video bán hàng (₫)': 'gmv',
   'Doanh thu (₫)': 'gmv',
   'Doanh số (₫)': 'gmv',
   'Giá trị giao dịch': 'gmv',
   'Người theo dõi mới': 'new_followers',
+  'Lượt nhấp từ Xem đến Thích': 'view_to_like_clicks',
+  'Lượt hiển thị sản phẩm': 'impressions',
+  'Lượt nhấp sản phẩm': 'product_clicks',
+  'Số khách hàng độc nhất': 'reach',
   'Tỷ lệ nhấp (CTR)': 'ctr',
   'Tỷ lệ nhấp (Video)': 'ctr',
   'Tỷ lệ xem hết': 'completion_rate',
   'Tỷ lệ xem hết video': 'completion_rate',
+  'Tỷ lệ từ Xem đến Thích': 'view_to_like_rate',
+  'Tỷ lệ nhấp đến đặt hàng (Video)': 'click_to_order_rate',
   'Lượt hiển thị': 'impressions',
-  'Lượt hiển thị sản phẩm': 'impressions',
   'Số lượng người xem video': 'reach',
   'Chẩn đoán': 'diagnosis',
   'Gán cho': 'assigned_user_id',
   'Thẻ': 'tags',
   
+  // Lowercase/exact DB field name fallbacks
   'video_id': 'video_id',
   'published_at': 'published_at',
   'gmv': 'gmv',
   'views': 'views',
   'orders': 'orders',
-  'Tên nhà sáng tạo': 'creator_name',
-  'Ngày': 'published_at',
 };
+
+// Numeric fields where a non-zero value should never be overwritten by zero
+// This prevents e.g. VV=680317 from being overwritten by Lượt xem=0
+const NUMERIC_FIELDS = new Set([
+  'views', 'likes', 'comments', 'shares', 'orders', 'gmv', 'gpm', 
+  'new_followers', 'ctr', 'completion_rate', 'impressions', 'reach',
+  'engagement', 'click_to_order_rate', 'items_sold',
+  'total_merchandise_value', 'view_to_like_clicks', 'product_clicks',
+  'view_to_like_rate',
+]);
 
 function parseNum(val: unknown): number {
   if (val === null || val === undefined || val === '') return 0;
-  if (typeof val === 'number') return val;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
   
   const s = String(val).trim().replace(/[₫%]/g, '');
   if (!s) return 0;
@@ -99,13 +133,16 @@ function parseNum(val: unknown): number {
   const lastDot = s.lastIndexOf('.');
   const lastComma = s.lastIndexOf(',');
   
+  let result: number;
   if (lastComma > lastDot) {
     // 1.234,56 -> 1234.56
-    return parseFloat(s.replace(/\./g, '').replace(',', '.'));
+    result = parseFloat(s.replace(/\./g, '').replace(',', '.'));
+  } else {
+    // Default/US format (1,234.56)
+    result = parseFloat(s.replace(/,/g, ''));
   }
   
-  // Default/US format (1,234.56)
-  return parseFloat(s.replace(/,/g, ''));
+  return isNaN(result) ? 0 : result;
 }
 
 function parseDate(val: unknown): string | null {
@@ -123,10 +160,7 @@ function parseDate(val: unknown): string | null {
   const s = String(val).trim();
   if (!s) return null;
   
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-  
-  // Handle YYYY-MM-DD
+  // Handle YYYY-MM-DD first (most reliable)
   const ymdParts = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(.*)$/);
   if (ymdParts) {
     const year = parseInt(ymdParts[1], 10);
@@ -136,7 +170,7 @@ function parseDate(val: unknown): string | null {
     if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
   }
 
-  // Handle DD/MM/YYYY
+  // Handle DD/MM/YYYY (Vietnamese format)
   const parts = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(.*)$/);
   if (parts) {
     const day = parseInt(parts[1], 10);
@@ -146,7 +180,55 @@ function parseDate(val: unknown): string | null {
     if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
   }
   
+  // Fallback to Date constructor
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  
   return null;
+}
+
+// Extract mapped fields from a raw data row using COLUMN_MAPPING
+// Exported so it can be reused for data re-processing
+export function extractFieldsFromRaw(rawData: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  
+  for (const [colHeader, value] of Object.entries(rawData)) {
+    const normalized = normalizeHeader(colHeader);
+    const field = COLUMN_MAPPING[normalized] || COLUMN_MAPPING[colHeader.trim()];
+    if (!field) continue;
+
+    // Skip fields that aren't stored in DB (they're just intermediate)
+    if (field === 'total_merchandise_value' || field === 'items_sold' || 
+        field === 'view_to_like_clicks' || field === 'product_clicks' ||
+        field === 'view_to_like_rate') {
+      // Use total_merchandise_value as GMV fallback if no direct GMV mapping found
+      if (field === 'total_merchandise_value') {
+        const num = parseNum(value);
+        if (num > 0 && !result['gmv']) {
+          result['gmv'] = num;
+        }
+      }
+      continue;
+    }
+
+    if (['video_id', 'creator_name', 'creator_id', 'video_title', 'product_name', 'diagnosis'].includes(field)) {
+      result[field] = value ? String(value).trim() : null;
+    } else if (field === 'published_at') {
+      result[field] = parseDate(value);
+    } else if (NUMERIC_FIELDS.has(field)) {
+      const num = parseNum(value);
+      // For numeric fields: never overwrite a non-zero value with zero
+      // This prevents VV=680317 from being overwritten by Lượt xem=0
+      const existing = result[field] as number | undefined;
+      if (num !== 0 || existing === undefined || existing === 0) {
+        result[field] = num;
+      }
+    } else {
+      result[field] = value;
+    }
+  }
+  
+  return result;
 }
 
 function mapRow(
@@ -163,20 +245,30 @@ function mapRow(
     orders: 0,
     gmv: 0,
     views: 0,
+    gpm: 0,
+    ctr: 0,
+    completion_rate: 0,
+    click_to_order_rate: 0,
+    new_followers: 0,
+    impressions: 0,
+    reach: 0,
+    engagement: 0,
     tags: [],
     raw_data: row 
   };
 
-  for (const [colHeader, value] of Object.entries(row)) {
-    const field = COLUMN_MAPPING[colHeader.trim()];
-    if (!field) continue;
-
-    if (['video_id', 'creator_name', 'creator_id', 'video_title', 'product_name', 'diagnosis'].includes(field)) {
-      mapped[field] = value ? String(value).trim() : null;
-    } else if (field === 'published_at') {
-      mapped[field] = parseDate(value);
+  // Extract fields using the robust mapping logic
+  const extracted = extractFieldsFromRaw(row);
+  
+  // Merge extracted fields into mapped, preserving non-zero values
+  for (const [field, value] of Object.entries(extracted)) {
+    if (NUMERIC_FIELDS.has(field)) {
+      const num = value as number;
+      if (num !== 0 || (mapped[field] as number) === 0) {
+        mapped[field] = num;
+      }
     } else {
-      mapped[field] = parseNum(value);
+      mapped[field] = value;
     }
   }
 
@@ -239,7 +331,7 @@ export default function UploadForm() {
           
           let matches = 0;
           row.forEach(cell => {
-            const cellStr = String(cell || '').trim();
+            const cellStr = normalizeHeader(String(cell || ''));
             if (COLUMN_MAPPING[cellStr]) matches++;
           });
           
