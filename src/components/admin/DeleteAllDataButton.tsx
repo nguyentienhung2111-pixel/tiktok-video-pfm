@@ -17,30 +17,49 @@ export default function DeleteAllDataButton() {
     if (status !== 'confirming') return;
 
     setStatus('deleting');
-    setMessage('Đang xoá toàn bộ dữ liệu video...');
+    setMessage('Đang xoá dữ liệu video...');
 
     try {
-      // Delete all rows from videos table
-      // Use neq on a non-nullable field to match all rows
-      const { error } = await supabase
-        .from('videos')
-        .delete()
-        .neq('video_id', '');
+      let totalDeleted = 0;
 
-      if (error) throw error;
+      // Delete in batches to avoid statement timeout
+      while (true) {
+        // Fetch a batch of IDs
+        const { data: batch, error: fetchError } = await supabase
+          .from('videos')
+          .select('id')
+          .limit(500);
+
+        if (fetchError) throw fetchError;
+        if (!batch || batch.length === 0) break;
+
+        const ids = batch.map((r) => r.id);
+        const { error: delError } = await supabase
+          .from('videos')
+          .delete()
+          .in('id', ids);
+
+        if (delError) throw delError;
+
+        totalDeleted += ids.length;
+        setMessage(`Đã xoá ${totalDeleted} video...`);
+      }
 
       // Also clear upload history
-      const { error: historyError } = await supabase
+      const { data: historyBatch } = await supabase
         .from('upload_history')
-        .delete()
-        .neq('file_name', '');
+        .select('id')
+        .limit(1000);
 
-      if (historyError) {
-        console.warn('Could not clear upload_history:', historyError);
+      if (historyBatch && historyBatch.length > 0) {
+        await supabase
+          .from('upload_history')
+          .delete()
+          .in('id', historyBatch.map((r) => r.id));
       }
 
       setStatus('success');
-      setMessage('Đã xoá toàn bộ dữ liệu video thành công!');
+      setMessage(`Đã xoá toàn bộ ${totalDeleted} video thành công!`);
     } catch (error: any) {
       console.error('Delete error:', error);
       setStatus('error');
