@@ -20,7 +20,7 @@ export default function ReprocessDataButton() {
     
     const confirmed = window.confirm(
       'Bạn có chắc chắn muốn xử lý lại toàn bộ dữ liệu?\n\n' +
-      'Hệ thống sẽ đọc lại cột gốc từ raw_data và cập nhật các trường: views, gmv, orders, likes, comments, shares, gpm...\n\n' +
+      'Hệ thống sẽ đọc lại cột gốc từ raw_data và cập nhật các trường: views, gmv, orders, likes, comments, shares...\n\n' +
       'Quá trình này có thể mất vài phút.'
     );
     if (!confirmed) return;
@@ -63,7 +63,7 @@ export default function ReprocessDataButton() {
           
           const fieldsToUpdate = [
             'views', 'gmv', 'orders', 'likes', 'comments', 'shares',
-            'gpm', 'ctr', 'completion_rate', 'click_to_order_rate',
+            'click_to_order_rate',
             'new_followers', 'impressions', 'reach', 'engagement',
             'published_at', 'creator_name', 'creator_id', 'video_title', 
             'product_name',

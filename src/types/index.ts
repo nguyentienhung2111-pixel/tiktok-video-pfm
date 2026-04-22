@@ -37,9 +37,6 @@ export interface Video {
   new_followers: number;
   orders: number;
   gmv: number;
-  gpm: number;
-  ctr: number;
-  completion_rate: number;
   conversion_rate: number;
   click_to_order_rate: number;
   video_duration_sec: number;

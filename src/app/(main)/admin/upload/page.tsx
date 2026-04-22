@@ -30,7 +30,6 @@ function downloadTemplate() {
     'ID nhà sáng tạo',
     'Tiêu đề video',
     'Tên sản phẩm',
-    'ID sản phẩm',
     'VV',
     'Lượt thích',
     'Bình luận',
@@ -38,12 +37,9 @@ function downloadTemplate() {
     'Đơn hàng',
     'Số món bán ra từ video',
     'GMV quy ra từ video bán hàng (₫)',
-    'GPM (₫)',
     'Người theo dõi mới',
     'Lượt hiển thị sản phẩm',
     'Lượt nhấp sản phẩm',
-    'Tỷ lệ nhấp (CTR)',
-    'Tỷ lệ xem hết',
   ];
 
   const sampleRow = [
@@ -53,7 +49,6 @@ function downloadTemplate() {
     'CR_001',
     'Video giới thiệu sản phẩm mới',
     'Sản phẩm A',
-    'SP_001',
     150000,
     5200,
     320,
@@ -61,12 +56,9 @@ function downloadTemplate() {
     45,
     60,
     12500000,
-    83333,
     120,
     25000,
     3500,
-    '14%',
-    '35%',
   ];
 
   const ws = XLSX.utils.aoa_to_sheet([headers, sampleRow]);

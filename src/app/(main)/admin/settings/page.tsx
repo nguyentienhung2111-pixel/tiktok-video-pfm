@@ -10,8 +10,6 @@ const METRICS = [
   { value: 'views', label: 'Lượt xem (Views)' },
   { value: 'gmv', label: 'Doanh thu (GMV)' },
   { value: 'orders', label: 'Đơn hàng (Orders)' },
-  { value: 'ctr', label: 'CTR (%)' },
-  { value: 'completion_rate', label: 'Xem hết (%)' },
   { value: 'conversion_rate', label: 'Chuyển đổi (%)' },
   { value: 'new_followers', label: 'Follow mới' },
   { value: 'engagement', label: 'Tương tác' },
