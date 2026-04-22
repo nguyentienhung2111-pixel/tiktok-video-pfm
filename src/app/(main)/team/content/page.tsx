@@ -3,10 +3,10 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { TrendingUp, TrendingDown, Tv, FileDown, Loader2, Package, ShoppingBag, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, Tv, FileDown, Loader2, ShoppingBag, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { Video, Profile } from '@/types';
+import { VideoWithMetrics, Profile } from '@/types';
 import { VideoTable } from '@/components/VideoTable';
 import { useUser } from '@/components/user-context';
 import DashboardHeader from '@/components/DashboardHeader';
@@ -16,6 +16,7 @@ import { subDays, startOfToday, format } from 'date-fns';
 import { toPng } from 'html-to-image';
 import FilterBar, { FilterState } from '@/components/FilterBar';
 import { Leaderboard, LeaderboardEntry } from '@/components/Leaderboard';
+import { fetchVideosWithMetrics } from '@/lib/queries';
 
 const INITIAL_FILTERS: FilterState = {
   search: '',
@@ -23,78 +24,61 @@ const INITIAL_FILTERS: FilterState = {
   tagIds: [],
   minGMV: '',
   minViews: '',
-  sourceType: 'brand', 
+  sourceType: 'brand',
 };
 
 export default function ContentTeamPage() {
   const { user } = useUser();
-  const [videos, setVideos] = useState<Video[]>([]);
+  const [summaryVideos, setSummaryVideos] = useState<VideoWithMetrics[]>([]);
+  const [paginatedVideos, setPaginatedVideos] = useState<VideoWithMetrics[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState(INITIAL_FILTERS);
   const [date, setDate] = useState<DateRange | undefined>({
-    from: subDays(startOfToday(), 365), 
+    from: subDays(startOfToday(), 365),
     to: startOfToday(),
   });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalCount, setTotalCount] = useState(0);
-  const [paginatedVideos, setPaginatedVideos] = useState<Video[]>([]);
 
   const dashboardRef = useRef<HTMLDivElement>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. Fetch Summary Data (for scorecards and leaderboards)
-      // Use a fresh query for summary
-      let summaryQuery = supabase
-        .from('videos')
-        .select('*')
-        .eq('source_type', 'brand');
+      const periodStart = date?.from ? format(date.from, 'yyyy-MM-dd') : undefined;
+      const periodEnd = date?.to ? format(date.to, 'yyyy-MM-dd') : undefined;
 
-      // Apply same filters to summary
-      if (date?.from) summaryQuery = summaryQuery.gte('published_at', format(date.from, 'yyyy-MM-dd'));
-      if (date?.to) summaryQuery = summaryQuery.lte('published_at', format(date.to, 'yyyy-MM-dd'));
-      if (filters.productId) summaryQuery = summaryQuery.eq('product_id', filters.productId);
-      if (filters.minGMV) summaryQuery = summaryQuery.gte('gmv', parseInt(filters.minGMV));
-      if (filters.minViews) summaryQuery = summaryQuery.gte('views', parseInt(filters.minViews));
-      if (filters.search) summaryQuery = summaryQuery.ilike('video_title', `%${filters.search}%`);
+      const baseParams = {
+        periodStart,
+        periodEnd,
+        sourceType: 'brand',
+        productId: filters.productId,
+        minGMV: filters.minGMV,
+        minViews: filters.minViews,
+        search: filters.search,
+      };
 
-      const { data: summaryData, error: summaryError } = await summaryQuery.limit(5000);
-      if (summaryError) throw summaryError;
-      setVideos((summaryData as Video[]) || []);
+      // Summary
+      const summaryResult = await fetchVideosWithMetrics({ ...baseParams, limit: 5000, offset: 0 });
+      setSummaryVideos(summaryResult.data);
 
-      // 2. Fetch Paginated Data (for table)
-      let tableQuery = supabase
-        .from('videos')
-        .select('*', { count: 'exact' })
-        .eq('source_type', 'brand')
-        .order('gmv', { ascending: false, nullsFirst: false });
+      // Table
+      const tableResult = await fetchVideosWithMetrics({
+        ...baseParams,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      });
+      setPaginatedVideos(tableResult.data);
+      setTotalCount(tableResult.totalCount);
 
-      // Apply same filters to table
-      if (date?.from) tableQuery = tableQuery.gte('published_at', format(date.from, 'yyyy-MM-dd'));
-      if (date?.to) tableQuery = tableQuery.lte('published_at', format(date.to, 'yyyy-MM-dd'));
-      if (filters.productId) tableQuery = tableQuery.eq('product_id', filters.productId);
-      if (filters.minGMV) tableQuery = tableQuery.gte('gmv', parseInt(filters.minGMV));
-      if (filters.minViews) tableQuery = tableQuery.gte('views', parseInt(filters.minViews));
-      if (filters.search) tableQuery = tableQuery.ilike('video_title', `%${filters.search}%`);
-
-      const from = (page - 1) * pageSize;
-      const to = from + pageSize - 1;
-      
-      const { data: videoData, error: videoError, count } = await tableQuery.range(from, to);
-      if (videoError) throw videoError;
-
-      if (count !== null) setTotalCount(count);
-      setPaginatedVideos((videoData as Video[]) || []);
-
+      // Users
       const { data: userData, error: userError } = await supabase
         .from('profiles')
         .select('*')
         .eq('is_active', true);
       if (userError) throw userError;
-
       setUsers((userData as Profile[]) || []);
     } catch (error) {
       console.error('Lỗi khi tải dữ liệu Thương hiệu:', error);
@@ -107,17 +91,16 @@ export default function ContentTeamPage() {
     fetchData();
   }, [fetchData]);
 
-  // Calculate Leaderboards
   const productLeaderboard = useMemo(() => {
-    const prodMap = new Map<string, { name: string, gmv: number, videos: number }>();
-    
-    videos.forEach(v => {
+    const prodMap = new Map<string, { name: string; gmv: number; videos: number }>();
+
+    summaryVideos.forEach(v => {
       const name = v.product_name || 'Khác/Chưa rõ';
       const current = prodMap.get(name) || { name, gmv: 0, videos: 0 };
       prodMap.set(name, {
         name,
         gmv: current.gmv + (v.gmv || 0),
-        videos: current.videos + 1
+        videos: current.videos + 1,
       });
     });
 
@@ -126,31 +109,31 @@ export default function ContentTeamPage() {
         id: name,
         name: stats.name,
         value: stats.gmv,
-        subtitle: `${stats.videos} video gắn link`
+        subtitle: `${stats.videos} video gắn link`,
       } as LeaderboardEntry))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
-  }, [videos]);
+  }, [summaryVideos]);
 
-  const totalGMV = videos.reduce((sum, v) => sum + (v.gmv || 0), 0);
-  const totalViews = videos.reduce((sum, v) => sum + (v.views || 0), 0);
-  const totalOrders = videos.reduce((sum, v) => sum + (v.orders || 0), 0);
+  const totalGMV = summaryVideos.reduce((sum, v) => sum + (v.gmv || 0), 0);
+  const totalViews = summaryVideos.reduce((sum, v) => sum + (v.views || 0), 0);
+  const totalOrders = summaryVideos.reduce((sum, v) => sum + (v.orders || 0), 0);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
   const formatNumber = (val: number) => new Intl.NumberFormat('vi-VN').format(val);
 
   const scorecards = [
-    { label: 'GMV Thương hiệu', value: formatCurrency(totalGMV), change: '+2.4%', up: true },
-    { label: 'Đơn hàng', value: formatNumber(totalOrders), change: '+1.1%', up: true },
-    { label: 'Video đã đăng', value: totalCount.toString(), change: '+5', up: true },
-    { label: 'Lượt xem', value: formatNumber(totalViews), change: '+15.7%', up: true },
+    { label: 'GMV Thương hiệu', value: formatCurrency(totalGMV), change: '', up: true },
+    { label: 'Đơn hàng', value: formatNumber(totalOrders), change: '', up: true },
+    { label: 'Video đã đăng', value: totalCount.toString(), change: '', up: true },
+    { label: 'Lượt xem', value: formatNumber(totalViews), change: '', up: true },
   ];
 
   const handleExport = async () => {
     if (dashboardRef.current === null) return;
     try {
-      const dataUrl = await toPng(dashboardRef.current, { 
-        cacheBust: true, 
+      const dataUrl = await toPng(dashboardRef.current, {
+        cacheBust: true,
         backgroundColor: '#0d1117',
         pixelRatio: 2,
         filter: (node: HTMLElement) => {
@@ -169,14 +152,14 @@ export default function ContentTeamPage() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <DashboardHeader 
-        title="Thương hiệu (DECOCO Official)" 
+      <DashboardHeader
+        title="Thương hiệu (DECOCO Official)"
         subtitle="Phân tích hiệu suất video kênh chính chủ"
       >
         <div className="flex items-center gap-3">
           <DateRangePicker date={date} setDate={setDate} />
           <Button size="sm" variant="outline" onClick={handleExport} className="export-ignore border-[#30363d] text-[#94a3b8] hover:text-white">
-            <FileDown className="mr-2 h-4 w-4 " />
+            <FileDown className="mr-2 h-4 w-4" />
             Lưu báo cáo
           </Button>
         </div>
@@ -184,11 +167,7 @@ export default function ContentTeamPage() {
 
       <div className="p-6 space-y-8" ref={dashboardRef}>
         <div className="export-ignore">
-          <FilterBar 
-            filters={filters} 
-            setFilters={setFilters} 
-            onClear={() => setFilters(INITIAL_FILTERS)} 
-          />
+          <FilterBar filters={filters} setFilters={setFilters} onClear={() => setFilters(INITIAL_FILTERS)} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -197,40 +176,37 @@ export default function ContentTeamPage() {
               <CardContent className="p-6">
                 <p className="text-xs font-bold uppercase tracking-wider text-[#94a3b8]">{item.label}</p>
                 <p className="mt-2 text-3xl font-black text-white">{item.value}</p>
-                <div className="mt-2 flex items-center gap-1">
-                  {item.up ? <TrendingUp className="h-3 w-3 text-emerald-500" /> : <TrendingDown className="h-3 w-3 text-red-500" />}
-                  <span className={cn("text-xs font-bold", item.up ? "text-emerald-500" : "text-red-500")}>{item.change}</span>
-                </div>
               </CardContent>
             </Card>
           ))}
         </div>
 
-        {/* Leaderboards Section */}
+        {/* Leaderboards */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-           <Leaderboard 
+          <Leaderboard
             title="TOP Sản phẩm (Brand)"
             entityType="staff"
             entries={productLeaderboard}
             valueLabel={formatCurrency}
           />
           <Card className="border-[#30363d] bg-[#161b22] overflow-hidden">
-             <CardContent className="flex flex-col items-center justify-center p-12 text-center h-full gap-4">
-                <ShoppingBag className="w-12 h-12 text-primary/40" />
-                <div>
-                  <p className="font-bold text-white">Xếp hạng Hiệu quả Content</p>
-                  <p className="text-xs text-muted-foreground mt-1">Phân tích sâu về các kịch bản và format video mang lại chuyển đổi cao nhất.</p>
-                </div>
-             </CardContent>
+            <CardContent className="flex flex-col items-center justify-center p-12 text-center h-full gap-4">
+              <ShoppingBag className="w-12 h-12 text-primary/40" />
+              <div>
+                <p className="font-bold text-white">Xếp hạng Hiệu quả Content</p>
+                <p className="text-xs text-muted-foreground mt-1">Phân tích sâu về các kịch bản và format video mang lại chuyển đổi cao nhất.</p>
+              </div>
+            </CardContent>
           </Card>
         </div>
 
+        {/* Video Table */}
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-8 duration-1000">
           <h2 className="text-xl font-black flex items-center gap-2">
             <Tv className="w-5 h-5 text-emerald-500" />
             Chi tiết video Thương hiệu ({totalCount})
           </h2>
-          
+
           {loading ? (
             <div className="h-48 flex items-center justify-center border border-[#30363d] rounded-2xl bg-[#161b22]">
               <Loader2 className="animate-spin h-8 w-8 text-primary" />
@@ -248,20 +224,16 @@ export default function ContentTeamPage() {
             <>
               <VideoTable videos={paginatedVideos} users={users} onRefresh={fetchData} />
 
-              {/* Pagination UI */}
               <div className="flex flex-col sm:flex-row justify-between items-center gap-4 py-4 px-2 border-t border-[#30363d] export-ignore">
                 <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
                   {(page - 1) * pageSize + 1} - {Math.min(page * pageSize, totalCount)} của {totalCount} video
                 </div>
-                
+
                 <div className="flex items-center gap-2">
-                  <select 
-                    value={pageSize} 
-                    onChange={(e) => {
-                      setPageSize(Number(e.target.value));
-                      setPage(1);
-                    }}
-                    className="bg-[#161b22] border border-[#30363d] text-xs font-bold py-1.5 px-3 rounded-lg focus:outline-none appearance-none pr-8 relative cursor-pointer hover:border-primary/50 transition-colors"
+                  <select
+                    value={pageSize}
+                    onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                    className="bg-[#161b22] border border-[#30363d] text-xs font-bold py-1.5 px-3 rounded-lg focus:outline-none appearance-none pr-8 cursor-pointer hover:border-primary/50 transition-colors"
                   >
                     <option value={10}>10/Trang</option>
                     <option value={20}>20/Trang</option>
@@ -269,27 +241,15 @@ export default function ContentTeamPage() {
                   </select>
 
                   <div className="flex items-center gap-1">
-                    <Button 
-                      variant="outline" 
-                      size="icon" 
-                      className="h-8 w-8 border-[#30363d] bg-transparent hover:bg-primary/10 disabled:opacity-30"
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                      disabled={page === 1}
-                    >
+                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#30363d] bg-transparent hover:bg-primary/10 disabled:opacity-30"
+                      onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
-                    
                     <span className="text-xs font-bold text-foreground px-2">
-                       Trang {page} / {Math.ceil(totalCount / pageSize)}
+                      Trang {page} / {Math.max(1, Math.ceil(totalCount / pageSize))}
                     </span>
-
-                    <Button 
-                      variant="outline" 
-                      size="icon" 
-                      className="h-8 w-8 border-[#30363d] bg-transparent hover:bg-primary/10 disabled:opacity-30"
-                      onClick={() => setPage(p => p + 1)}
-                      disabled={page >= Math.ceil(totalCount / pageSize)}
-                    >
+                    <Button variant="outline" size="icon" className="h-8 w-8 border-[#30363d] bg-transparent hover:bg-primary/10 disabled:opacity-30"
+                      onClick={() => setPage(p => p + 1)} disabled={page >= Math.ceil(totalCount / pageSize)}>
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>

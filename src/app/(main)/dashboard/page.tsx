@@ -3,13 +3,13 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { 
-  TrendingUp, TrendingDown, Tv, Upload, FileDown, Loader2, 
-  ChevronLeft, ChevronRight, ChevronDown 
+import {
+  TrendingUp, TrendingDown, Tv, FileDown, Loader2,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { Video, Profile } from '@/types';
+import { VideoWithMetrics, Profile } from '@/types';
 import { VideoTable } from '@/components/VideoTable';
 import DashboardHeader from '@/components/DashboardHeader';
 import { DateRangePicker } from '@/components/date-range-picker';
@@ -17,6 +17,7 @@ import { DateRange } from 'react-day-picker';
 import { subDays, startOfToday, format } from 'date-fns';
 import { toPng } from 'html-to-image';
 import FilterBar, { FilterState } from '@/components/FilterBar';
+import { fetchVideosWithMetrics } from '@/lib/queries';
 
 const INITIAL_FILTERS: FilterState = {
   search: '',
@@ -28,69 +29,60 @@ const INITIAL_FILTERS: FilterState = {
 };
 
 export default function DashboardPage() {
-  const [videos, setVideos] = useState<Video[]>([]);
+  const [summaryVideos, setSummaryVideos] = useState<VideoWithMetrics[]>([]);
+  const [paginatedVideos, setPaginatedVideos] = useState<VideoWithMetrics[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS);
   const [date, setDate] = useState<DateRange | undefined>({
-    from: subDays(startOfToday(), 365), // Default to a year to show more data initially
+    from: subDays(startOfToday(), 365),
     to: startOfToday(),
   });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalCount, setTotalCount] = useState(0);
-  const [paginatedVideos, setPaginatedVideos] = useState<Video[]>([]);
 
   const dashboardRef = useRef<HTMLDivElement>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. Fetch Summary Data (for scorecards)
-      let summaryQuery = supabase
-        .from('videos')
-        .select('*');
+      const periodStart = date?.from ? format(date.from, 'yyyy-MM-dd') : undefined;
+      const periodEnd = date?.to ? format(date.to, 'yyyy-MM-dd') : undefined;
 
-      if (date?.from) summaryQuery = summaryQuery.gte('published_at', format(date.from, 'yyyy-MM-dd'));
-      if (date?.to) summaryQuery = summaryQuery.lte('published_at', format(date.to, 'yyyy-MM-dd'));
-      if (filters.sourceType !== 'all') summaryQuery = summaryQuery.eq('source_type', filters.sourceType);
-      if (filters.productId) summaryQuery = summaryQuery.eq('product_id', filters.productId);
-      if (filters.minGMV) summaryQuery = summaryQuery.gte('gmv', parseInt(filters.minGMV));
-      if (filters.minViews) summaryQuery = summaryQuery.gte('views', parseInt(filters.minViews));
-      if (filters.search) summaryQuery = summaryQuery.ilike('video_title', `%${filters.search}%`);
+      const baseParams = {
+        periodStart,
+        periodEnd,
+        sourceType: filters.sourceType,
+        productId: filters.productId,
+        minGMV: filters.minGMV,
+        minViews: filters.minViews,
+        search: filters.search,
+      };
 
-      const { data: summaryData, error: summaryError } = await summaryQuery.limit(5000);
-      if (summaryError) throw summaryError;
-      setVideos((summaryData as Video[]) || []);
+      // 1. Fetch summary data (for scorecards)
+      const summaryResult = await fetchVideosWithMetrics({
+        ...baseParams,
+        limit: 5000,
+        offset: 0,
+      });
+      setSummaryVideos(summaryResult.data);
 
-      // 2. Fetch Paginated Data (for table)
-      let tableQuery = supabase
-        .from('videos')
-        .select('*', { count: 'exact' })
-        .order('gmv', { ascending: false, nullsFirst: false });
+      // 2. Fetch paginated data (for table)
+      const tableResult = await fetchVideosWithMetrics({
+        ...baseParams,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      });
+      setPaginatedVideos(tableResult.data);
+      setTotalCount(tableResult.totalCount);
 
-      if (date?.from) tableQuery = tableQuery.gte('published_at', format(date.from, 'yyyy-MM-dd'));
-      if (date?.to) tableQuery = tableQuery.lte('published_at', format(date.to, 'yyyy-MM-dd'));
-      if (filters.sourceType !== 'all') tableQuery = tableQuery.eq('source_type', filters.sourceType);
-      if (filters.productId) tableQuery = tableQuery.eq('product_id', filters.productId);
-      if (filters.minGMV) tableQuery = tableQuery.gte('gmv', parseInt(filters.minGMV));
-      if (filters.minViews) tableQuery = tableQuery.gte('views', parseInt(filters.minViews));
-      if (filters.search) tableQuery = tableQuery.ilike('video_title', `%${filters.search}%`);
-
-      const from = (page - 1) * pageSize;
-      const to = from + pageSize - 1;
-      const { data: videoData, error: videoError, count } = await tableQuery.range(from, to);
-      
-      if (videoError) throw videoError;
-      if (count !== null) setTotalCount(count);
-      setPaginatedVideos((videoData as Video[]) || []);
-
+      // 3. Fetch users
       const { data: userData, error: userError } = await supabase
         .from('profiles')
         .select('*')
         .eq('is_active', true);
       if (userError) throw userError;
-
       setUsers((userData as Profile[]) || []);
     } catch (error) {
       console.error('Lỗi khi tải dữ liệu:', error);
@@ -103,17 +95,14 @@ export default function DashboardPage() {
     fetchData();
   }, [fetchData]);
 
-  const totalGMV = videos.reduce((sum, v) => sum + (v.gmv || 0), 0);
-  const totalViews = videos.reduce((sum, v) => sum + (v.views || 0), 0);
-  const totalOrders = videos.reduce((sum, v) => sum + (v.orders || 0), 0);
+  const totalGMV = summaryVideos.reduce((sum, v) => sum + (v.gmv || 0), 0);
+  const totalViews = summaryVideos.reduce((sum, v) => sum + (v.views || 0), 0);
+  const totalOrders = summaryVideos.reduce((sum, v) => sum + (v.orders || 0), 0);
 
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
-  };
-
-  const formatNumber = (val: number) => {
-    return new Intl.NumberFormat('vi-VN').format(val);
-  };
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
+  const formatNumber = (val: number) =>
+    new Intl.NumberFormat('vi-VN').format(val);
 
   const scorecards = [
     { label: 'Tổng GMV', value: formatCurrency(totalGMV), change: '', up: true },
@@ -125,8 +114,8 @@ export default function DashboardPage() {
   const handleExport = async () => {
     if (dashboardRef.current === null) return;
     try {
-      const dataUrl = await toPng(dashboardRef.current, { 
-        cacheBust: true, 
+      const dataUrl = await toPng(dashboardRef.current, {
+        cacheBust: true,
         backgroundColor: '#0d1117',
         pixelRatio: 2,
         filter: (node: HTMLElement) => {
@@ -145,26 +134,25 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <DashboardHeader 
-        title="Dashboard Tổng quan" 
+      <DashboardHeader
+        title="Dashboard Tổng quan"
         subtitle="Hiệu suất video TikTok DECOCO"
       >
         <div className="flex items-center gap-3">
           <DateRangePicker date={date} setDate={setDate} />
           <Button size="sm" className="bg-primary text-primary-foreground export-ignore shadow-lg shadow-primary/20" onClick={handleExport}>
-            <FileDown className="mr-2 h-4 w-4 " />
+            <FileDown className="mr-2 h-4 w-4" />
             Lưu báo cáo (Ảnh)
           </Button>
         </div>
       </DashboardHeader>
 
       <div className="p-6 space-y-8" ref={dashboardRef}>
-        {/* Filter Section */}
         <div className="export-ignore">
-          <FilterBar 
-            filters={filters} 
-            setFilters={setFilters} 
-            onClear={() => setFilters(INITIAL_FILTERS)} 
+          <FilterBar
+            filters={filters}
+            setFilters={setFilters}
+            onClear={() => setFilters(INITIAL_FILTERS)}
           />
         </div>
 
@@ -181,9 +169,7 @@ export default function DashboardPage() {
                 {item.change && (
                   <div className="mt-2 flex items-center gap-1">
                     {item.up ? <TrendingUp className="h-3 w-3 text-emerald-500" /> : <TrendingDown className="h-3 w-3 text-red-500" />}
-                    <span className={cn("text-xs font-bold", item.up ? "text-emerald-500" : "text-red-500")}>
-                      {item.change}
-                    </span>
+                    <span className={cn("text-xs font-bold", item.up ? "text-emerald-500" : "text-red-500")}>{item.change}</span>
                   </div>
                 )}
               </CardContent>
@@ -191,7 +177,7 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {/* Video Table Area */}
+        {/* Video Table */}
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-8 duration-1000">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-black flex items-center gap-2 text-foreground">
@@ -199,7 +185,7 @@ export default function DashboardPage() {
               Chi tiết video ({totalCount})
             </h2>
           </div>
-          
+
           {loading ? (
             <div className="h-64 flex flex-col items-center justify-center border border-[#30363d] rounded-2xl bg-[#161b22] gap-4">
               <Loader2 className="animate-spin h-8 w-8 text-primary" />
@@ -223,68 +209,41 @@ export default function DashboardPage() {
           ) : (
             <>
               <VideoTable videos={paginatedVideos} users={users} onRefresh={fetchData} />
-              
-              {/* Pagination UI */}
+
+              {/* Pagination */}
               <div className="flex flex-col sm:flex-row justify-between items-center gap-4 py-4 px-2 border-t border-[#30363d] export-ignore">
                 <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
                   Hiển thị {(page - 1) * pageSize + 1} - {Math.min(page * pageSize, totalCount)} trong {totalCount} video
                 </div>
-                
+
                 <div className="flex items-center gap-2">
-                  <div className="flex items-center mr-4">
-                    <select 
-                      value={pageSize} 
-                      onChange={(e) => {
-                        setPageSize(Number(e.target.value));
-                        setPage(1);
-                      }}
-                      className="bg-[#161b22] border border-[#30363d] text-xs font-bold py-1.5 px-3 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary appearance-none pr-8 relative cursor-pointer hover:border-primary/50 transition-colors"
-                    >
-                      <option value={10}>10/Trang</option>
-                      <option value={20}>20/Trang</option>
-                      <option value={50}>50/Trang</option>
-                      <option value={100}>100/Trang</option>
-                    </select>
-                  </div>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                    className="bg-[#161b22] border border-[#30363d] text-xs font-bold py-1.5 px-3 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary appearance-none pr-8 cursor-pointer hover:border-primary/50 transition-colors"
+                  >
+                    <option value={10}>10/Trang</option>
+                    <option value={20}>20/Trang</option>
+                    <option value={50}>50/Trang</option>
+                    <option value={100}>100/Trang</option>
+                  </select>
 
                   <div className="flex items-center gap-1">
-                    <Button 
-                      variant="outline" 
-                      size="icon" 
+                    <Button
+                      variant="outline" size="icon"
                       className="h-8 w-8 border-[#30363d] bg-transparent hover:bg-primary/10 hover:text-primary disabled:opacity-30"
                       onClick={() => setPage(p => Math.max(1, p - 1))}
                       disabled={page === 1}
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
-                    
-                    <div className="flex items-center gap-1">
-                      {Array.from({ length: Math.min(5, Math.ceil(totalCount / pageSize)) }, (_, i) => {
-                        // Logic to show a sliding window of pages could go here, 
-                        // but for simplicity we show the first few or relevant ones.
-                        const pageNum = i + 1;
-                        const isCurrent = page === pageNum;
-                        return (
-                          <Button 
-                            key={pageNum}
-                            variant={isCurrent ? "default" : "outline"}
-                            size="sm"
-                            className={cn(
-                              "h-8 w-8 text-xs font-bold",
-                              isCurrent ? "bg-primary text-primary-foreground" : "border-[#30363d] bg-transparent hover:bg-primary/10 hover:text-primary"
-                            )}
-                            onClick={() => setPage(pageNum)}
-                          >
-                            {pageNum}
-                          </Button>
-                        );
-                      })}
-                      {Math.ceil(totalCount / pageSize) > 5 && <span className="text-[#94a3b8] px-1">...</span>}
-                    </div>
 
-                    <Button 
-                      variant="outline" 
-                      size="icon" 
+                    <span className="text-xs font-bold text-foreground px-2">
+                      Trang {page} / {Math.max(1, Math.ceil(totalCount / pageSize))}
+                    </span>
+
+                    <Button
+                      variant="outline" size="icon"
                       className="h-8 w-8 border-[#30363d] bg-transparent hover:bg-primary/10 hover:text-primary disabled:opacity-30"
                       onClick={() => setPage(p => p + 1)}
                       disabled={page >= Math.ceil(totalCount / pageSize)}

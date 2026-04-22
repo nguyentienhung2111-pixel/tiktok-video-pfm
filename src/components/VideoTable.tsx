@@ -11,21 +11,23 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Video, Profile } from '@/types';
+import { Video, VideoWithMetrics, Profile } from '@/types';
 import { cn } from '@/lib/utils';
 import TagDialog from './TagDialog';
 import { Tag as TagIcon, Plus } from 'lucide-react';
 
+type VideoLike = Video | VideoWithMetrics;
+
 interface VideoTableProps {
-  videos: Video[];
+  videos: VideoLike[];
   users: Profile[];
   onAssign?: (videoId: string, userId: string) => void;
   onRefresh?: () => void;
 }
 
 export function VideoTable({ videos, users, onAssign, onRefresh }: VideoTableProps) {
-  const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
-  const [localVideos, setLocalVideos] = useState<Video[]>(videos);
+  const [selectedVideo, setSelectedVideo] = useState<VideoLike | null>(null);
+  const [localVideos, setLocalVideos] = useState<VideoLike[]>(videos);
 
   // Update local videos when props change
   React.useEffect(() => {
@@ -40,8 +42,8 @@ export function VideoTable({ videos, users, onAssign, onRefresh }: VideoTablePro
     return new Intl.NumberFormat('vi-VN').format(val);
   };
 
-  const handleTagSuccess = (updatedVideo: Video) => {
-    setLocalVideos(prev => 
+  const handleTagSuccess = (updatedVideo: VideoLike) => {
+    setLocalVideos(prev =>
       prev.map(v => v.id === updatedVideo.id ? updatedVideo : v)
     );
     if (onRefresh) onRefresh();
