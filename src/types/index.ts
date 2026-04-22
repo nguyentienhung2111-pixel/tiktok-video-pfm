@@ -51,6 +51,33 @@ export interface Video {
   updated_at: string;
 }
 
+// Metrics stored per reporting period
+export interface VideoPeriodMetrics {
+  id: string;
+  video_id: string;
+  period_start: string;
+  period_end: string;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  orders: number;
+  gmv: number;
+  new_followers: number;
+  impressions: number;
+  reach: number;
+  engagement: number;
+  click_to_order_rate: number;
+  items_sold: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Video with aggregated metrics from RPC function (includes total_count for pagination)
+export interface VideoWithMetrics extends Video {
+  total_count?: number;
+}
+
 export interface TagGroup {
   id: string;
   name: string;

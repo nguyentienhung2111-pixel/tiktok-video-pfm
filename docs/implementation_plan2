@@ -1,0 +1,192 @@
+# Thiết kế lại mô hình dữ liệu: Metrics theo kỳ báo cáo (Report Period)
+
+## Bối cảnh & Vấn đề
+
+Hệ thống hiện tại lưu **1 row duy nhất** cho mỗi Video ID trong bảng `videos`, với tất cả metrics (views, GMV, orders...) gộp chung. Điều này gây ra vấn đề nghiêm trọng:
+
+### Ví dụ minh họa
+
+| Lần upload | Kỳ báo cáo | Video ID 01 (đăng 1/3) | GMV |
+|---|---|---|---|
+| Upload 1 | 1/4 → 21/4 | Video bán trong kỳ này | 1,000,000₫ |
+| Upload 2 | 1/3 → 31/3 | Video bán trong kỳ này | 500,000₫ |
+
+**Vấn đề 1 — Lọc theo ngày đăng sai:**
+- User lọc dashboard 1/4 → 21/4, nhưng video đăng ngày 1/3 → **không hiển thị** dù GMV trong kỳ đó là 1 triệu.
+
+**Vấn đề 2 — Ghi đè / cộng tổng sai:**
+- Upload 2 sẽ **ghi đè** GMV thành 500K (mất dữ liệu kỳ 1)
+- Hoặc nếu dùng SUM: GMV = 1,500,000₫ → **không đúng** vì mỗi kỳ có data riêng
+
+**Vấn đề 3 — Không thể phân tích theo thời gian:**
+- Không biết video nào "bùng" trong tuần nào
+- Không thể so sánh hiệu suất giữa các kỳ
+
+---
+
+## Phương án đề xuất: Tách thành 2 bảng
+
+> [!IMPORTANT]
+> Đây là thay đổi kiến trúc quan trọng nhất của hệ thống. Bảng `videos` sẽ chỉ lưu **thông tin cố định** (metadata), còn dữ liệu số sẽ nằm trong bảng mới `video_period_metrics` gắn với **kỳ báo cáo**.
+
+### Mô hình mới
+
+```mermaid
+erDiagram
+    videos {
+        text video_id PK
+        text source_type
+        text creator_name
+        text creator_id
+        text video_title
+        date published_at
+        text product_name
+        text product_id
+        text diagnosis
+        text assigned_user_id
+        text[] tags
+        jsonb raw_data
+    }
+    
+    video_period_metrics {
+        uuid id PK
+        text video_id FK
+        date period_start
+        date period_end
+        int views
+        int likes
+        int comments
+        int shares
+        int orders
+        numeric gmv
+        int new_followers
+        int impressions
+        int reach
+        numeric engagement
+        numeric click_to_order_rate
+        timestamptz created_at
+    }
+    
+    videos ||--o{ video_period_metrics : "has metrics per period"
+```
+
+### Cách hoạt động
+
+| Bước | Hành vi |
+|---|---|
+| **Upload** | Admin chọn **kỳ báo cáo** (VD: 1/4 → 21/4) trước khi upload file |
+| **Lưu metadata** | Thông tin video (title, creator, ngày đăng) → upsert vào `videos` |
+| **Lưu metrics** | Dữ liệu số (views, GMV, orders) → insert vào `video_period_metrics` với `period_start` và `period_end` |
+| **Trùng kỳ** | Nếu upload lại cùng kỳ cho cùng video → **upsert** (ghi đè kỳ cũ, không trùng lặp) |
+| **Dashboard lọc** | Bộ lọc thời gian sẽ lọc theo `period_start`/`period_end` thay vì `published_at` |
+| **Tính tổng** | Dashboard SUM các metrics từ `video_period_metrics` theo kỳ được chọn |
+
+### Ví dụ thực tế sau khi áp dụng
+
+**Bảng `videos`:**
+| video_id | creator_name | published_at | product_name |
+|---|---|---|---|
+| VD_01 | Creator A | 2026-03-01 | Sản phẩm X |
+
+**Bảng `video_period_metrics`:**
+| video_id | period_start | period_end | views | gmv | orders |
+|---|---|---|---|---|---|
+| VD_01 | 2026-03-01 | 2026-03-31 | 50,000 | 500,000 | 10 |
+| VD_01 | 2026-04-01 | 2026-04-21 | 80,000 | 1,000,000 | 25 |
+
+**Khi user lọc 1/4 → 21/4:**
+- ✅ Video VD_01 hiển thị với GMV = 1,000,000₫ (chỉ lấy metrics kỳ tháng 4)
+
+**Khi user lọc 1/3 → 21/4 (2 tháng):**
+- ✅ Video VD_01 hiển thị với GMV = 1,500,000₫ (tổng 2 kỳ)
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> ### Về giao diện Upload
+> Admin sẽ cần **chọn kỳ báo cáo** (ngày bắt đầu → ngày kết thúc) trước khi upload file. Đây là bước bắt buộc.
+> 
+> Ví dụ: Nếu bạn tải dữ liệu từ TikTok Seller Center cho khoảng 1/4 → 21/4, bạn sẽ chọn ngày đó trong form upload.
+
+> [!WARNING]
+> ### Về dữ liệu cũ
+> Dữ liệu hiện có trong bảng `videos` sẽ cần được migrate. Các options:
+> 1. **Giữ nguyên dữ liệu cũ** trong `videos` như "legacy data", chỉ áp dụng mô hình mới cho upload mới
+> 2. **Xóa sạch** dữ liệu cũ và bắt đầu lại (nếu dữ liệu chưa nhiều)
+> 
+> Bạn muốn chọn option nào?
+
+## Open Questions
+
+> [!IMPORTANT]
+> ### 1. Bộ lọc thời gian trên Dashboard
+> Hiện tại bộ lọc dùng `published_at` (ngày đăng video). Sau khi thay đổi, bộ lọc sẽ dùng `period_start`/`period_end` (kỳ báo cáo). 
+> 
+> **Bạn có muốn giữ thêm tùy chọn lọc theo ngày đăng không?** Hay chỉ cần lọc theo kỳ báo cáo?
+
+> [!IMPORTANT]
+> ### 2. Kỳ báo cáo chồng chéo
+> Nếu bạn upload 2 file: kỳ 1/4→21/4 và kỳ 15/4→30/4 → khoảng 15/4→21/4 bị **chồng** và GMV sẽ bị tính đôi.
+>
+> **Bạn có muốn hệ thống cảnh báo khi phát hiện kỳ chồng chéo không?**
+
+---
+
+## Proposed Changes
+
+### Database (Supabase)
+
+#### [NEW] Bảng `video_period_metrics`
+- Tạo bảng mới với unique constraint trên `(video_id, period_start, period_end)` để tránh trùng lặp
+- Khi upload cùng video cùng kỳ → upsert, không tạo bản ghi mới
+
+#### [MODIFY] Bảng `videos`
+- Giữ nguyên cấu trúc, nhưng các cột số (views, gmv, orders...) sẽ không còn được cập nhật trực tiếp khi upload
+- Chúng có thể giữ lại như "legacy" hoặc dùng để cache tổng tất cả kỳ
+
+---
+
+### Upload Flow
+
+#### [MODIFY] [UploadForm.tsx](file:///e:/Obsidian%20Data/TikTok%20Video%20Performance%20DECOCO%20App/src/components/admin/UploadForm.tsx)
+- Thêm DateRangePicker để admin chọn **kỳ báo cáo** trước khi upload
+- Tách logic: metadata → upsert vào `videos`, metrics → upsert vào `video_period_metrics`
+- Validate: không cho upload nếu chưa chọn kỳ
+
+---
+
+### Dashboard & Pages
+
+#### [MODIFY] [dashboard/page.tsx](file:///e:/Obsidian%20Data/TikTok%20Video%20Performance%20DECOCO%20App/src/app/(main)/dashboard/page.tsx)
+- Thay đổi query: JOIN `videos` với `video_period_metrics`, filter theo `period_start`/`period_end`
+- Scorecards (Tổng GMV, Views, Orders) tính SUM từ `video_period_metrics`
+- Table hiển thị tổng metrics theo kỳ được chọn
+
+#### [MODIFY] [team/content/page.tsx](file:///e:/Obsidian%20Data/TikTok%20Video%20Performance%20DECOCO%20App/src/app/(main)/team/content/page.tsx)
+- Cập nhật query tương tự dashboard
+
+#### [MODIFY] [team/booking/page.tsx](file:///e:/Obsidian%20Data/TikTok%20Video%20Performance%20DECOCO%20App/src/app/(main)/team/booking/page.tsx)
+- Cập nhật query tương tự dashboard
+
+---
+
+### Types
+
+#### [MODIFY] [types/index.ts](file:///e:/Obsidian%20Data/TikTok%20Video%20Performance%20DECOCO%20App/src/types/index.ts)
+- Thêm interface `VideoPeriodMetrics`
+- Cập nhật `Video` type nếu cần thêm `period_metrics`
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- Upload file test với cùng Video ID, khác kỳ → kiểm tra 2 records trong `video_period_metrics`
+- Upload lại cùng kỳ → kiểm tra upsert (không tạo bản ghi mới)
+- Dashboard filter theo kỳ → kiểm tra GMV, Views đúng theo kỳ đã chọn
+
+### Manual Verification
+- Upload 2 file khác kỳ, cùng video → kiểm tra dashboard hiển thị đúng khi lọc từng kỳ
+- Kiểm tra scorecards tổng hợp đúng khi lọc nhiều kỳ
