@@ -4,6 +4,7 @@ export interface Profile {
   id: string;
   username: string;
   display_name: string;
+  email?: string;
   role: UserRole;
   is_active: boolean;
   created_at: string;
