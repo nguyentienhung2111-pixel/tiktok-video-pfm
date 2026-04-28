@@ -29,8 +29,9 @@ export async function POST(request: Request) {
 
   await supabaseAdmin.from('profiles').delete().eq('id', userId);
 
+  // Auth user may not exist for legacy profiles — ignore "User not found" error
   const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
-  if (error) {
+  if (error && !error.message.includes('User not found')) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
