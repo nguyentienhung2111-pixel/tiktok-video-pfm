@@ -20,6 +20,19 @@ export interface FetchVideosResult {
   totalCount: number;
 }
 
+export interface VideosSummary {
+  totalGMV: number;
+  totalViews: number;
+  totalOrders: number;
+  totalVideos: number;
+  totalCreators: number;
+}
+
+export type FetchVideosSummaryParams = Omit<
+  FetchVideosParams,
+  'orderBy' | 'orderAsc' | 'limit' | 'offset'
+>;
+
 /**
  * Fetch videos with aggregated metrics from video_period_metrics,
  * filtered by report period and other criteria.
@@ -63,4 +76,57 @@ export async function fetchVideosWithMetrics(params: FetchVideosParams): Promise
   const totalCount = rows.length > 0 ? (rows[0].total_count || rows.length) : 0;
 
   return { data: rows, totalCount };
+}
+
+/**
+ * Fetch aggregate scorecard totals entirely server-side.
+ * Use this for "Tổng GMV / Lượt xem / Đơn hàng / Video / KOC" cards
+ * instead of summing a paginated/limited row payload on the client.
+ */
+export async function fetchVideosSummary(
+  params: FetchVideosSummaryParams
+): Promise<VideosSummary> {
+  const {
+    periodStart,
+    periodEnd,
+    sourceType,
+    productId,
+    minGMV,
+    minViews,
+    search,
+  } = params;
+
+  const rpcParams: Record<string, unknown> = {};
+  if (periodStart) rpcParams.p_period_start = periodStart;
+  if (periodEnd) rpcParams.p_period_end = periodEnd;
+  if (sourceType && sourceType !== 'all') rpcParams.p_source_type = sourceType;
+  if (productId) rpcParams.p_product_id = productId;
+  if (minGMV) rpcParams.p_min_gmv = parseInt(minGMV);
+  if (minViews) rpcParams.p_min_views = parseInt(minViews);
+  if (search) rpcParams.p_search = search;
+
+  const { data, error } = await supabase.rpc(
+    'get_videos_summary_for_period',
+    rpcParams
+  );
+
+  if (error) throw error;
+
+  const row = (data || [])[0] as
+    | {
+        total_gmv: number | string | null;
+        total_views: number | string | null;
+        total_orders: number | string | null;
+        total_videos: number | string | null;
+        total_creators: number | string | null;
+      }
+    | undefined;
+
+  return {
+    totalGMV: Number(row?.total_gmv ?? 0),
+    totalViews: Number(row?.total_views ?? 0),
+    totalOrders: Number(row?.total_orders ?? 0),
+    totalVideos: Number(row?.total_videos ?? 0),
+    totalCreators: Number(row?.total_creators ?? 0),
+  };
 }

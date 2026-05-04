@@ -16,7 +16,7 @@ import { subDays, startOfToday, format } from 'date-fns';
 import { toPng } from 'html-to-image';
 import FilterBar, { FilterState } from '@/components/FilterBar';
 import { Leaderboard, LeaderboardEntry } from '@/components/Leaderboard';
-import { fetchVideosWithMetrics } from '@/lib/queries';
+import { fetchVideosWithMetrics, fetchVideosSummary, VideosSummary } from '@/lib/queries';
 
 const INITIAL_FILTERS: FilterState = {
   search: '',
@@ -27,9 +27,20 @@ const INITIAL_FILTERS: FilterState = {
   sourceType: 'koc',
 };
 
+const EMPTY_SUMMARY: VideosSummary = {
+  totalGMV: 0,
+  totalViews: 0,
+  totalOrders: 0,
+  totalVideos: 0,
+  totalCreators: 0,
+};
+
 export default function BookingTeamPage() {
   const { user } = useUser();
-  const [summaryVideos, setSummaryVideos] = useState<VideoWithMetrics[]>([]);
+  const [summary, setSummary] = useState<VideosSummary>(EMPTY_SUMMARY);
+  // leaderboardVideos still uses the limited RPC payload — top-N by GMV is
+  // unaffected because the RPC already orders gmv DESC server-side.
+  const [leaderboardVideos, setLeaderboardVideos] = useState<VideoWithMetrics[]>([]);
   const [paginatedVideos, setPaginatedVideos] = useState<VideoWithMetrics[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,26 +71,24 @@ export default function BookingTeamPage() {
         search: filters.search,
       };
 
-      // Summary
-      const summaryResult = await fetchVideosWithMetrics({ ...baseParams, limit: 5000, offset: 0 });
-      setSummaryVideos(summaryResult.data);
+      const [summaryResult, leaderboardResult, tableResult, usersResult] = await Promise.all([
+        fetchVideosSummary(baseParams),
+        fetchVideosWithMetrics({ ...baseParams, limit: 5000, offset: 0 }),
+        fetchVideosWithMetrics({
+          ...baseParams,
+          limit: pageSize,
+          offset: (page - 1) * pageSize,
+        }),
+        supabase.from('profiles').select('*').eq('is_active', true),
+      ]);
 
-      // Table
-      const tableResult = await fetchVideosWithMetrics({
-        ...baseParams,
-        limit: pageSize,
-        offset: (page - 1) * pageSize,
-      });
+      setSummary(summaryResult);
+      setLeaderboardVideos(leaderboardResult.data);
       setPaginatedVideos(tableResult.data);
       setTotalCount(tableResult.totalCount);
 
-      // Users
-      const { data: userData, error: userError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('is_active', true);
-      if (userError) throw userError;
-      setUsers((userData as Profile[]) || []);
+      if (usersResult.error) throw usersResult.error;
+      setUsers((usersResult.data as Profile[]) || []);
     } catch (error) {
       console.error('Lỗi khi tải dữ liệu KOC:', error);
     } finally {
@@ -94,7 +103,7 @@ export default function BookingTeamPage() {
   const kocLeaderboard = useMemo(() => {
     const kocMap = new Map<string, { name: string; gmv: number; videos: number }>();
 
-    summaryVideos.forEach(v => {
+    leaderboardVideos.forEach(v => {
       const id = v.creator_id || 'unknown';
       const current = kocMap.get(id) || { name: v.creator_name || 'Hợp tác viên', gmv: 0, videos: 0 };
       kocMap.set(id, {
@@ -113,12 +122,12 @@ export default function BookingTeamPage() {
       } as LeaderboardEntry))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
-  }, [summaryVideos]);
+  }, [leaderboardVideos]);
 
   const staffLeaderboard = useMemo(() => {
     const staffMap = new Map<string, { gmv: number; kocCount: Set<string> }>();
 
-    summaryVideos.forEach(v => {
+    leaderboardVideos.forEach(v => {
       if (!v.assigned_user_id) return;
       const current = staffMap.get(v.assigned_user_id) || { gmv: 0, kocCount: new Set() };
       staffMap.set(v.assigned_user_id, {
@@ -139,21 +148,16 @@ export default function BookingTeamPage() {
       })
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
-  }, [summaryVideos, users]);
-
-  const totalGMV = summaryVideos.reduce((sum, v) => sum + (v.gmv || 0), 0);
-  const totalViews = summaryVideos.reduce((sum, v) => sum + (v.views || 0), 0);
-  const totalOrders = summaryVideos.reduce((sum, v) => sum + (v.orders || 0), 0);
-  const totalKOCs = new Set(summaryVideos.map(v => v.creator_id)).size;
+  }, [leaderboardVideos, users]);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
   const formatNumber = (val: number) => new Intl.NumberFormat('vi-VN').format(val);
 
   const scorecards = [
-    { label: 'GMV từ KOC', value: formatCurrency(totalGMV), change: '', up: true },
-    { label: 'Đơn hàng KOC', value: formatNumber(totalOrders), change: '', up: true },
-    { label: 'Số KOC đã lên clip', value: totalKOCs.toString(), change: '', up: true },
-    { label: 'Tổng lượt xem KOC', value: formatNumber(totalViews), change: '', up: true },
+    { label: 'GMV từ KOC', value: formatCurrency(summary.totalGMV), change: '', up: true },
+    { label: 'Đơn hàng KOC', value: formatNumber(summary.totalOrders), change: '', up: true },
+    { label: 'Số KOC đã lên clip', value: formatNumber(summary.totalCreators), change: '', up: true },
+    { label: 'Tổng lượt xem KOC', value: formatNumber(summary.totalViews), change: '', up: true },
   ];
 
   const handleExport = async () => {

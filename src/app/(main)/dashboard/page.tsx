@@ -17,7 +17,7 @@ import { DateRange } from 'react-day-picker';
 import { subDays, startOfToday, format } from 'date-fns';
 import { toPng } from 'html-to-image';
 import FilterBar, { FilterState } from '@/components/FilterBar';
-import { fetchVideosWithMetrics } from '@/lib/queries';
+import { fetchVideosWithMetrics, fetchVideosSummary, VideosSummary } from '@/lib/queries';
 
 const INITIAL_FILTERS: FilterState = {
   search: '',
@@ -28,8 +28,16 @@ const INITIAL_FILTERS: FilterState = {
   sourceType: 'all',
 };
 
+const EMPTY_SUMMARY: VideosSummary = {
+  totalGMV: 0,
+  totalViews: 0,
+  totalOrders: 0,
+  totalVideos: 0,
+  totalCreators: 0,
+};
+
 export default function DashboardPage() {
-  const [summaryVideos, setSummaryVideos] = useState<VideoWithMetrics[]>([]);
+  const [summary, setSummary] = useState<VideosSummary>(EMPTY_SUMMARY);
   const [paginatedVideos, setPaginatedVideos] = useState<VideoWithMetrics[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,30 +68,22 @@ export default function DashboardPage() {
         search: filters.search,
       };
 
-      // 1. Fetch summary data (for scorecards)
-      const summaryResult = await fetchVideosWithMetrics({
-        ...baseParams,
-        limit: 5000,
-        offset: 0,
-      });
-      setSummaryVideos(summaryResult.data);
+      const [summaryResult, tableResult, usersResult] = await Promise.all([
+        fetchVideosSummary(baseParams),
+        fetchVideosWithMetrics({
+          ...baseParams,
+          limit: pageSize,
+          offset: (page - 1) * pageSize,
+        }),
+        supabase.from('profiles').select('*').eq('is_active', true),
+      ]);
 
-      // 2. Fetch paginated data (for table)
-      const tableResult = await fetchVideosWithMetrics({
-        ...baseParams,
-        limit: pageSize,
-        offset: (page - 1) * pageSize,
-      });
+      setSummary(summaryResult);
       setPaginatedVideos(tableResult.data);
       setTotalCount(tableResult.totalCount);
 
-      // 3. Fetch users
-      const { data: userData, error: userError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('is_active', true);
-      if (userError) throw userError;
-      setUsers((userData as Profile[]) || []);
+      if (usersResult.error) throw usersResult.error;
+      setUsers((usersResult.data as Profile[]) || []);
     } catch (error) {
       console.error('Lỗi khi tải dữ liệu:', error);
     } finally {
@@ -95,20 +95,16 @@ export default function DashboardPage() {
     fetchData();
   }, [fetchData]);
 
-  const totalGMV = summaryVideos.reduce((sum, v) => sum + (v.gmv || 0), 0);
-  const totalViews = summaryVideos.reduce((sum, v) => sum + (v.views || 0), 0);
-  const totalOrders = summaryVideos.reduce((sum, v) => sum + (v.orders || 0), 0);
-
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
   const formatNumber = (val: number) =>
     new Intl.NumberFormat('vi-VN').format(val);
 
   const scorecards = [
-    { label: 'Tổng GMV', value: formatCurrency(totalGMV), change: '', up: true },
-    { label: 'Tổng đơn hàng', value: formatNumber(totalOrders), change: '', up: true },
-    { label: 'Tổng Video', value: totalCount.toString(), change: '', up: true },
-    { label: 'Tổng lượt xem', value: formatNumber(totalViews), change: '', up: true },
+    { label: 'Tổng GMV', value: formatCurrency(summary.totalGMV), change: '', up: true },
+    { label: 'Tổng đơn hàng', value: formatNumber(summary.totalOrders), change: '', up: true },
+    { label: 'Tổng Video', value: formatNumber(summary.totalVideos), change: '', up: true },
+    { label: 'Tổng lượt xem', value: formatNumber(summary.totalViews), change: '', up: true },
   ];
 
   const handleExport = async () => {
