@@ -17,6 +17,11 @@ const ReprocessDataButton = dynamic(() => import('@/components/admin/ReprocessDa
   loading: () => <div className="p-6 text-center animate-pulse text-[#94a3b8]">...</div>
 });
 
+const DeleteLastUploadButton = dynamic(() => import('@/components/admin/DeleteLastUploadButton'), {
+  ssr: false,
+  loading: () => <div className="p-6 text-center animate-pulse text-[#94a3b8]">...</div>
+});
+
 const DeleteAllDataButton = dynamic(() => import('@/components/admin/DeleteAllDataButton'), {
   ssr: false,
   loading: () => <div className="p-6 text-center animate-pulse text-[#94a3b8]">...</div>
@@ -85,6 +90,11 @@ export default function UploadPage() {
         {/* Re-process existing data section */}
         <div className="mt-8">
           <ReprocessDataButton />
+        </div>
+
+        {/* Delete last upload section */}
+        <div className="mt-8">
+          <DeleteLastUploadButton />
         </div>
 
         {/* Delete all data section */}
