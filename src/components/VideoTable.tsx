@@ -56,6 +56,7 @@ export function VideoTable({ videos, users, onAssign, onRefresh }: VideoTablePro
           <tr className="bg-[#0d1117] border-b border-[#30363d]">
             <TableHead className="w-[300px] text-[0.7rem] uppercase font-bold text-[#94a3b8]">Video / Creator</TableHead>
             <TableHead className="text-[0.7rem] uppercase font-bold text-[#94a3b8]">Nguồn</TableHead>
+            <TableHead className="text-[0.7rem] uppercase font-bold text-[#94a3b8]">ID Video</TableHead>
             <TableHead className="text-right text-[0.7rem] uppercase font-bold text-[#94a3b8]">GMV</TableHead>
             <TableHead className="text-right text-[0.7rem] uppercase font-bold text-[#94a3b8]">Đơn hàng</TableHead>
             <TableHead className="text-right text-[0.7rem] uppercase font-bold text-[#94a3b8]">Lượt xem</TableHead>
@@ -66,7 +67,7 @@ export function VideoTable({ videos, users, onAssign, onRefresh }: VideoTablePro
         <TableBody>
           {localVideos.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+              <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                 Không tìm thấy dữ liệu.
               </TableCell>
             </TableRow>
@@ -94,6 +95,15 @@ export function VideoTable({ videos, users, onAssign, onRefresh }: VideoTablePro
                   )}>
                     {video.source_type}
                   </Badge>
+                </TableCell>
+                <TableCell>
+                  <span
+                    className="font-mono text-[10px] text-[#94a3b8] cursor-pointer hover:text-primary transition-colors"
+                    title="Nhấn để sao chép ID Video"
+                    onClick={() => video.video_id && navigator.clipboard?.writeText(video.video_id)}
+                  >
+                    {video.video_id || '—'}
+                  </span>
                 </TableCell>
                 <TableCell className="text-right font-bold text-emerald-500">
                   {formatCurrency(video.gmv)}
