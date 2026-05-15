@@ -6,81 +6,110 @@
 ## Kết quả Kiểm thử (2026-05-15)
 
 ### Thay đổi đã áp dụng
-- **DB**: Migration `supabase/migrations/add_assigned_user_filter_to_rpcs.sql` — thêm tham số `p_assigned_user_id UUID DEFAULT NULL` vào cả hai RPC `get_videos_with_period_metrics` và `get_videos_summary_for_period`, áp dụng điều kiện `(p_assigned_user_id IS NULL OR v.assigned_user_id = p_assigned_user_id)` trong mệnh đề `WHERE`.
-- **Queries**: `src/lib/queries.ts` — thêm `assignedUserId?: string` vào `FetchVideosParams`, truyền `p_assigned_user_id` xuống RPC khi có giá trị.
-- **FilterBar**: `src/components/FilterBar.tsx` — thêm `staffId` vào `FilterState`; thêm prop `showStaffFilter` + `staffOptions`; render dropdown khi bật; tính vào `activeFilterCount`.
-- **Trang KOC**: `src/app/(main)/team/booking/page.tsx` — bật `showStaffFilter`, truyền danh sách `users` đang load sẵn, đẩy `staffId` xuống RPC.
-- **Trang khác** (`content`, `dashboard`): chỉ bổ sung `staffId: ''` vào `INITIAL_FILTERS` để khớp shape; **KHÔNG** hiển thị dropdown nhân viên (không hồi quy UI).
+- **Migration mới**: `supabase/migrations/fix_rpc_overload_drop_old_signatures.sql`
+  - `DROP FUNCTION IF EXISTS get_videos_with_period_metrics(DATE, DATE, TEXT, UUID, NUMERIC, BIGINT, TEXT, TEXT, BOOLEAN, INT, INT, UUID[])` — xoá overload cũ (12 tham số).
+  - `DROP FUNCTION IF EXISTS get_videos_summary_for_period(DATE, DATE, TEXT, UUID, NUMERIC, BIGINT, TEXT, UUID[])` — xoá overload cũ (8 tham số).
+  - `CREATE OR REPLACE FUNCTION ...` — tạo lại 2 hàm với chữ ký mới (kèm `p_assigned_user_id`).
+- Không sửa code frontend (TypeScript/React) — lỗi chỉ ở phía DB.
 
-### Kết quả test trực tiếp Supabase SQL Editor (project `mrmwwlqolqsoyuxasrta`)
-1. Test có bộ lọc — staff `076f1c17-36fc-422f-8b24-f8d038f5bf03`:
-   - Đếm trực tiếp `videos` (source_type='koc', assigned_user_id=staff): **6247**
-   - `get_videos_summary_for_period(... staff)` trả `total_videos`: **6247** ✅
-   - `get_videos_with_period_metrics(... staff, limit 5000)` trả: **5000 hàng** (đúng theo giới hạn `limit`)
-2. Test không bộ lọc (hồi quy):
-   - Đếm trực tiếp `videos` (source_type='koc'): **6439**
-   - `get_videos_summary_for_period(...)` không truyền staff: **6439** ✅ (không lệch so với trước)
+### Xác nhận signature DB sau migration (`pg_get_function_identity_arguments`)
+- `get_videos_summary_for_period(p_period_start date, ..., p_tag_ids uuid[], p_assigned_user_id uuid)` — **chỉ còn 1 bản** ✅
+- `get_videos_with_period_metrics(p_period_start date, ..., p_tag_ids uuid[], p_assigned_user_id uuid)` — **chỉ còn 1 bản** ✅
 
-### Kiểm tra Frontend
-- `npx tsc --noEmit` chạy sạch, không lỗi typecheck.
-- Sau khi commit, Vercel sẽ tự deploy preview/prod. Vận hành trên UI: vào trang KOC → Bộ lọc nâng cao → dropdown **Nhân viên phụ trách** xuất hiện, chọn → scorecards, Leaderboard và bảng video phải cập nhật.
+### Tái hiện & xác minh bằng test script (`scratch/test_rpc.mjs`, đăng nhập anon)
+
+**Trước fix** (output gốc):
+```
+Summary Error: { code: 'PGRST203', message: 'Could not choose the best candidate function ...' }
+Videos Error:  { code: 'PGRST203', message: 'Could not choose the best candidate function ...' }
+```
+
+**Sau fix** (output thực tế):
+```
+Testing get_videos_summary_for_period...
+Summary Result: [
+  { total_gmv: 4094189829, total_views: 27620683, total_orders: 41026,
+    total_videos: 6439, total_creators: 2495 }
+]
+
+Testing get_videos_with_period_metrics...
+Videos Count: 5
+First Video ID: 7562787536624454929
+Total Count from first row: 6439
+```
+
+### Kiểm tra thêm — bộ lọc staff vẫn hoạt động (`scratch/test_rpc_with_staff.mjs`)
+```
+--- summary WITHOUT staff filter ---
+[ { total_videos: 6439, total_creators: 2495, total_gmv: 4094189829, ... } ]
+
+--- summary WITH staff filter (076f1c17-...) ---
+[ { total_videos: 6247, total_creators: 2462, total_gmv: 3905643285, ... } ]
+
+--- list WITH staff filter (limit 3) ---
+rows: 3   total_count: 6247   sample assigned_user_id: 076f1c17-36fc-422f-8b24-f8d038f5bf03
+```
+
+Kết luận: PGRST203 đã hết, cả hai nhánh (không filter / có filter staff) đều trả dữ liệu đúng. Push lên main để Vercel tự deploy.
 
 ## Tiêu đề Lỗi
-Thiếu bộ lọc theo Nhân viên phụ trách trong Bộ lọc nâng cao tại trang KOC / Affiliate.
+Toàn bộ video không hiển thị do lỗi Ambiguous Function trong Supabase (Overloading).
 
 ## Mô tả Lỗi
-Hiện tại, người dùng không thể lọc danh sách video theo nhân viên đang phụ trách KOC. Mặc dù hệ thống đã có chức năng phân bổ KOC cho nhân viên (lưu vào cột `assigned_user_id` trong bảng `videos`), nhưng bộ lọc nâng cao (`FilterBar`) chưa hỗ trợ lọc theo tiêu chí này.
+Sau khi áp dụng tính năng lọc theo nhân viên, tất cả các trang Dashboard, Brand và KOC đều không hiển thị dữ liệu video. GMV và các chỉ số khác đều hiển thị bằng 0.
 
 ## Các bước tái hiện
-1. Truy cập trang **KOC / Affiliate**.
-2. Nhấn vào nút **Bộ lọc nâng cao**.
-3. Quan sát các bộ lọc hiện có (Sản phẩm, Tag, GMV, Views).
-4. Kết quả: Không thấy bộ lọc theo **Nhân viên phụ trách**.
+1. Truy cập bất kỳ trang nào có hiển thị video (`dashboard`, `team/content`, `team/booking`).
+2. Quan sát bảng video và các thẻ thống kê.
+3. Kết quả: "Không tìm thấy video nào" và các số liệu bằng 0.
 
 ## Kết quả Thực tế vs Kết quả Mong đợi
-- **Kết quả Thực tế**: Chỉ có bộ lọc theo Sản phẩm, Tag, GMV và Views.
-- **Kết quả Mong đợi**: Có thêm một dropdown để chọn Nhân viên phụ trách. Khi chọn, danh sách video và các con số thống kê (GMV, Đơn hàng, v.v.) phải cập nhật theo các video do nhân viên đó phụ trách.
+- **Kết quả Thực tế**: Dữ liệu trống rỗng trên toàn hệ thống.
+- **Kết quả Mong đợi**: Dữ liệu hiển thị bình thường như trước khi thêm bộ lọc.
 
 ## Ngữ cảnh & Môi trường
-- Trang liên quan: `src/app/(main)/team/booking/page.tsx`
-- Thành phần liên quan: `src/components/FilterBar.tsx`
-- API liên quan: Các RPC function `get_videos_with_period_metrics` và `get_videos_summary_for_period`.
+- Lỗi xảy ra sau khi chạy migration `add_assigned_user_filter_to_rpcs.sql`.
+- Mã lỗi từ Supabase: `PGRST203` (Could not choose the best candidate function).
 
 ---
 
 ## Phân tích Nguyên nhân Gốc rễ (Root Cause Analysis)
-1. **Dữ liệu**: Bảng `videos` đã có cột `assigned_user_id` và logic gán nhân viên cho KOC đã hoạt động (trong `src/app/(main)/admin/koc-mapping/page.tsx`).
-2. **Backend (Supabase RPC)**: Các hàm SQL hiện tại (`get_videos_with_period_metrics` và `get_videos_summary_for_period`) chưa nhận tham số `p_assigned_user_id` nên không thể thực hiện lọc ở phía server.
-3. **Frontend (API Layer)**: Interface `FetchVideosParams` trong `src/lib/queries.ts` thiếu trường `assignedUserId`.
-4. **Frontend (UI)**: Thành phần `FilterBar.tsx` chưa có UI dropdown để chọn nhân viên và chưa quản lý state cho bộ lọc này.
+Lỗi xảy ra do cơ chế **Function Overloading** của PostgreSQL. Khi thêm tham số `p_assigned_user_id` vào hàm RPC, migration đã tạo ra một hàm mới với signature khác thay vì thay thế hàm cũ.
 
-**Luồng dữ liệu hiện tại:**
+**Sơ đồ lỗi:**
 ```
-[UI FilterBar] --(FilterState)--> [BookingPage] --(params)--> [Queries.ts] --(RPC)--> [Supabase SQL]
-      ^                                                                                    |
-      |____________________________________________________________________________________|
+Client gọi rpc('get_videos_with_period_metrics', { params_without_staff })
+       |
+       v
+Supabase (PostgREST) tìm trong DB thấy 2 hàm trùng tên:
+   1. func(..., p_tag_ids UUID[])           <-- Cũ
+   2. func(..., p_tag_ids UUID[], p_staff UUID) <-- Mới (có default NULL)
+       |
+       v
+Lỗi: "Could not choose the best candidate function" (Ambiguity)
+       |
+       v
+Frontend nhận error -> paginatedVideos = [] -> UI hiển thị "No data"
 ```
-*Vấn đề: Trường `assigned_user_id` bị đứt gãy ở mọi mắt xích trong luồng trên.*
+
+**Tại sao `CREATE OR REPLACE` không hoạt động?**
+Trong Postgres, `CREATE OR REPLACE` chỉ thay thế hàm nếu danh sách tham số (số lượng và kiểu dữ liệu) khớp hoàn toàn. Việc thêm một tham số mới (ngay cả khi có default) tạo ra một hàm hoàn toàn mới.
 
 ---
 
 ## Đề xuất Sửa lỗi (Proposed Fixes)
 
-### Phương án 1: Cập nhật toàn diện (Khuyến nghị)
-1. **Database**: Cập nhật 2 hàm RPC trong Supabase để hỗ trợ tham số `p_assigned_user_id`.
-2. **Queries**: Thêm `assignedUserId` vào `FetchVideosParams` và truyền xuống RPC.
-3. **FilterBar**:
-    - Thêm `staffId` vào `FilterState`.
-    - Thêm prop `showStaffFilter` để chỉ hiển thị bộ lọc này ở trang cần thiết.
-    - Fetch danh sách nhân viên từ bảng `profiles` (hoặc nhận qua props).
-4. **Booking Page**: Truyền `showStaffFilter={true}` vào `FilterBar` và xử lý state tương ứng.
+### Phương án: Drop hàm cũ và Recreate hàm mới (Khuyến nghị)
+1. **Migration mới**: Tạo file migration thực hiện `DROP FUNCTION` các bản cũ của 2 hàm RPC trước khi tạo lại bản mới.
+2. **SQL cụ thể**:
+```sql
+DROP FUNCTION IF EXISTS get_videos_with_period_metrics(DATE, DATE, TEXT, UUID, NUMERIC, BIGINT, TEXT, TEXT, BOOLEAN, INT, INT, UUID[]);
+DROP FUNCTION IF EXISTS get_videos_summary_for_period(DATE, DATE, TEXT, UUID, NUMERIC, BIGINT, TEXT, UUID[]);
+-- Sau đó chạy lại nội dung của add_assigned_user_filter_to_rpcs.sql
+```
 
 ---
 
 ## Kế hoạch Xác minh
-1. **Kiểm tra Database**: Chạy câu lệnh SQL cập nhật RPC và test trực tiếp trong Supabase Editor với một `assigned_user_id` cụ thể.
-2. **Kiểm tra Frontend**: 
-    - Mở bộ lọc nâng cao trên trang KOC, chọn một nhân viên.
-    - Kiểm tra xem payload gửi lên Supabase có chứa `p_assigned_user_id` không.
-    - Xác nhận danh sách video và bảng Leaderboard chỉ hiển thị dữ liệu của nhân viên đó.
-3. **Kiểm tra Hồi quy (Regression)**: Đảm bảo trang "Thương hiệu" và "Dashboard" vẫn hoạt động bình thường và không hiển thị bộ lọc nhân viên nếu không cần thiết.
+1. **Chạy script test**: Chạy lại `scratch/test_rpc.mjs` để đảm bảo Supabase không còn báo lỗi `PGRST203` và trả về đúng số lượng video.
+2. **Kiểm tra UI**: Refresh Dashboard và trang KOC để xác nhận dữ liệu đã hiển thị trở lại.
