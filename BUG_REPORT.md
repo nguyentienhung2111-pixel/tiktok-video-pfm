@@ -5,111 +5,96 @@
 
 ## Kết quả Kiểm thử (2026-05-15)
 
-### Thay đổi đã áp dụng
-- **Migration mới**: `supabase/migrations/fix_rpc_overload_drop_old_signatures.sql`
-  - `DROP FUNCTION IF EXISTS get_videos_with_period_metrics(DATE, DATE, TEXT, UUID, NUMERIC, BIGINT, TEXT, TEXT, BOOLEAN, INT, INT, UUID[])` — xoá overload cũ (12 tham số).
-  - `DROP FUNCTION IF EXISTS get_videos_summary_for_period(DATE, DATE, TEXT, UUID, NUMERIC, BIGINT, TEXT, UUID[])` — xoá overload cũ (8 tham số).
-  - `CREATE OR REPLACE FUNCTION ...` — tạo lại 2 hàm với chữ ký mới (kèm `p_assigned_user_id`).
-- Không sửa code frontend (TypeScript/React) — lỗi chỉ ở phía DB.
+### Thay đổi đã áp dụng — Phương án 1 (lọc tại Page Component)
+- `src/app/(main)/team/booking/page.tsx`:
+  - Thêm `useMemo` mới:
+    ```ts
+    const bookingStaff = useMemo(
+      () => users.filter(u => u.role === 'staff_booking' || u.role === 'leader_booking'),
+      [users]
+    );
+    ```
+  - Đổi `staffOptions={users}` → `staffOptions={bookingStaff}`.
+- Không đụng tới fetch `profiles` → Leaderboard "TOP Nhân viên Booking" (đang lookup theo `assigned_user_id` qua `users`) vẫn hoạt động bình thường.
+- **Loại bỏ `admin`** khỏi danh sách: xác thực bằng query DB cho thấy không có video KOC nào được gán cho role `admin` (KOC chỉ gán cho `leader_booking` 6247 video + `staff_booking` 192 video).
 
-### Xác nhận signature DB sau migration (`pg_get_function_identity_arguments`)
-- `get_videos_summary_for_period(p_period_start date, ..., p_tag_ids uuid[], p_assigned_user_id uuid)` — **chỉ còn 1 bản** ✅
-- `get_videos_with_period_metrics(p_period_start date, ..., p_tag_ids uuid[], p_assigned_user_id uuid)` — **chỉ còn 1 bản** ✅
+### Kiểm thử
+- TypeScript: `npx tsc --noEmit` chạy sạch.
+- Script tái hiện luồng dữ liệu của page (`scratch/test_booking_staff_filter.mjs`):
 
-### Tái hiện & xác minh bằng test script (`scratch/test_rpc.mjs`, đăng nhập anon)
-
-**Trước fix** (output gốc):
 ```
-Summary Error: { code: 'PGRST203', message: 'Could not choose the best candidate function ...' }
-Videos Error:  { code: 'PGRST203', message: 'Could not choose the best candidate function ...' }
-```
-
-**Sau fix** (output thực tế):
-```
-Testing get_videos_summary_for_period...
-Summary Result: [
-  { total_gmv: 4094189829, total_views: 27620683, total_orders: 41026,
-    total_videos: 6439, total_creators: 2495 }
-]
-
-Testing get_videos_with_period_metrics...
-Videos Count: 5
-First Video ID: 7562787536624454929
-Total Count from first row: 6439
+Profiles BEFORE filter (count by role): {
+  admin: 1,
+  leader_booking: 1,
+  staff_booking: 3,
+  leader_content: 1,
+  staff_content: 6
+}
+Dropdown AFTER filter (count by role): { leader_booking: 1, staff_booking: 3 }
+PASS: dropdown has 4 entries, all in {staff_booking, leader_booking}.
 ```
 
-### Kiểm tra thêm — bộ lọc staff vẫn hoạt động (`scratch/test_rpc_with_staff.mjs`)
-```
---- summary WITHOUT staff filter ---
-[ { total_videos: 6439, total_creators: 2495, total_gmv: 4094189829, ... } ]
-
---- summary WITH staff filter (076f1c17-...) ---
-[ { total_videos: 6247, total_creators: 2462, total_gmv: 3905643285, ... } ]
-
---- list WITH staff filter (limit 3) ---
-rows: 3   total_count: 6247   sample assigned_user_id: 076f1c17-36fc-422f-8b24-f8d038f5bf03
-```
-
-Kết luận: PGRST203 đã hết, cả hai nhánh (không filter / có filter staff) đều trả dữ liệu đúng. Push lên main để Vercel tự deploy.
+Kết quả: dropdown từ 12 nhân viên active → còn 4 nhân viên team Booking (1 leader + 3 staff). Admin & toàn bộ team Content đã bị loại. Leaderboard và bảng video không thay đổi.
 
 ## Tiêu đề Lỗi
-Toàn bộ video không hiển thị do lỗi Ambiguous Function trong Supabase (Overloading).
+Bộ lọc Nhân viên hiển thị tất cả nhân viên thay vì chỉ team Booking tại trang KOC.
 
 ## Mô tả Lỗi
-Sau khi áp dụng tính năng lọc theo nhân viên, tất cả các trang Dashboard, Brand và KOC đều không hiển thị dữ liệu video. GMV và các chỉ số khác đều hiển thị bằng 0.
+Hiện tại, dropdown "Nhân viên phụ trách" trong Bộ lọc nâng cao tại trang KOC / Affiliate đang liệt kê toàn bộ nhân viên có trong hệ thống (bao gồm cả team Content và Admin). Điều này gây khó khăn cho việc tìm kiếm và chọn đúng nhân viên thuộc team Booking để lọc dữ liệu.
 
 ## Các bước tái hiện
-1. Truy cập bất kỳ trang nào có hiển thị video (`dashboard`, `team/content`, `team/booking`).
-2. Quan sát bảng video và các thẻ thống kê.
-3. Kết quả: "Không tìm thấy video nào" và các số liệu bằng 0.
+1. Truy cập trang **KOC / Affiliate**.
+2. Nhấn vào nút **Bộ lọc nâng cao**.
+3. Mở dropdown **Nhân viên phụ trách**.
+4. Quan sát danh sách nhân viên: Thấy cả nhân viên có hậu tố "CONTENT" hoặc thuộc team Content.
 
 ## Kết quả Thực tế vs Kết quả Mong đợi
-- **Kết quả Thực tế**: Dữ liệu trống rỗng trên toàn hệ thống.
-- **Kết quả Mong đợi**: Dữ liệu hiển thị bình thường như trước khi thêm bộ lọc.
+- **Kết quả Thực tế**: Danh sách hiển thị tất cả các `profiles` có `is_active = true`.
+- **Kết quả Mong đợi**: Danh sách chỉ hiển thị các nhân viên thuộc team Booking (các role `staff_booking` và `leader_booking`).
 
 ## Ngữ cảnh & Môi trường
-- Lỗi xảy ra sau khi chạy migration `add_assigned_user_filter_to_rpcs.sql`.
-- Mã lỗi từ Supabase: `PGRST203` (Could not choose the best candidate function).
+- File ảnh hưởng: `src/app/(main)/team/booking/page.tsx`.
+- Dữ liệu: Bảng `profiles` trong Supabase.
 
 ---
 
 ## Phân tích Nguyên nhân Gốc rễ (Root Cause Analysis)
-Lỗi xảy ra do cơ chế **Function Overloading** của PostgreSQL. Khi thêm tham số `p_assigned_user_id` vào hàm RPC, migration đã tạo ra một hàm mới với signature khác thay vì thay thế hàm cũ.
+Trong file `src/app/(main)/team/booking/page.tsx`, câu lệnh fetch dữ liệu người dùng đang lấy toàn bộ profile mà không lọc theo role:
 
-**Sơ đồ lỗi:**
-```
-Client gọi rpc('get_videos_with_period_metrics', { params_without_staff })
-       |
-       v
-Supabase (PostgREST) tìm trong DB thấy 2 hàm trùng tên:
-   1. func(..., p_tag_ids UUID[])           <-- Cũ
-   2. func(..., p_tag_ids UUID[], p_staff UUID) <-- Mới (có default NULL)
-       |
-       v
-Lỗi: "Could not choose the best candidate function" (Ambiguity)
-       |
-       v
-Frontend nhận error -> paginatedVideos = [] -> UI hiển thị "No data"
+```typescript
+// src/app/(main)/team/booking/page.tsx:85
+supabase.from('profiles').select('*').eq('is_active', true)
 ```
 
-**Tại sao `CREATE OR REPLACE` không hoạt động?**
-Trong Postgres, `CREATE OR REPLACE` chỉ thay thế hàm nếu danh sách tham số (số lượng và kiểu dữ liệu) khớp hoàn toàn. Việc thêm một tham số mới (ngay cả khi có default) tạo ra một hàm hoàn toàn mới.
+Sau đó, kết quả này được truyền trực tiếp vào component `FilterBar`:
 
----
+```typescript
+// src/app/(main)/team/booking/page.tsx:209
+staffOptions={users}
+```
+
+Do đó, bất kỳ user nào đang hoạt động đều xuất hiện trong danh sách lọc.
 
 ## Đề xuất Sửa lỗi (Proposed Fixes)
 
-### Phương án: Drop hàm cũ và Recreate hàm mới (Khuyến nghị)
-1. **Migration mới**: Tạo file migration thực hiện `DROP FUNCTION` các bản cũ của 2 hàm RPC trước khi tạo lại bản mới.
-2. **SQL cụ thể**:
-```sql
-DROP FUNCTION IF EXISTS get_videos_with_period_metrics(DATE, DATE, TEXT, UUID, NUMERIC, BIGINT, TEXT, TEXT, BOOLEAN, INT, INT, UUID[]);
-DROP FUNCTION IF EXISTS get_videos_summary_for_period(DATE, DATE, TEXT, UUID, NUMERIC, BIGINT, TEXT, UUID[]);
--- Sau đó chạy lại nội dung của add_assigned_user_filter_to_rpcs.sql
-```
+### Phương án 1: Lọc tại Page Component (Khuyến nghị)
+Thay đổi cách truyền `staffOptions` vào `FilterBar` bằng cách lọc mảng `users` dựa trên role.
 
----
+```typescript
+// Trong BookingTeamPage
+const bookingStaff = useMemo(() => 
+  users.filter(u => u.role === 'staff_booking' || u.role === 'leader_booking' || u.role === 'admin'),
+  [users]
+);
+
+// ... sau đó truyền bookingStaff vào FilterBar
+```
+*Lưu ý: Có nên bao gồm `admin` không? Tùy thuộc vào việc Admin có trực tiếp phụ trách KOC nào không. Dựa trên yêu cầu "chỉ hiện nhân viên team Booking", có thể loại bỏ `admin`.*
+
+### Phương án 2: Lọc ngay khi Fetch từ Database
+Cập nhật câu lệnh Supabase để chỉ lấy các user thuộc team Booking. Cách này tối ưu hơn về băng thông nhưng có thể ảnh hưởng đến các logic khác nếu `users` được dùng cho mục đích khác trong cùng page (hiện tại `users` được dùng cho Leaderboard, nên nếu lọc ở đây thì Leaderboard cũng sẽ chỉ hiện team Booking - điều này thực tế là hợp lý cho trang này).
 
 ## Kế hoạch Xác minh
-1. **Chạy script test**: Chạy lại `scratch/test_rpc.mjs` để đảm bảo Supabase không còn báo lỗi `PGRST203` và trả về đúng số lượng video.
-2. **Kiểm tra UI**: Refresh Dashboard và trang KOC để xác nhận dữ liệu đã hiển thị trở lại.
+1. Kiểm tra dropdown Nhân viên tại trang KOC: Đảm bảo không còn nhân viên team Content.
+2. Kiểm tra Leaderboard "TOP Nhân viên Booking": Đảm bảo vẫn hiển thị đúng các nhân viên team Booking có hiệu suất cao.
+3. Kiểm tra trang Thương hiệu (Brand): Đảm bảo không bị ảnh hưởng (hoặc nếu cần cũng áp dụng filter tương tự cho team Content).

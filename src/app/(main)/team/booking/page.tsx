@@ -103,6 +103,11 @@ export default function BookingTeamPage() {
     fetchData();
   }, [fetchData]);
 
+  const bookingStaff = useMemo(
+    () => users.filter(u => u.role === 'staff_booking' || u.role === 'leader_booking'),
+    [users]
+  );
+
   const kocLeaderboard = useMemo(() => {
     const kocMap = new Map<string, { name: string; gmv: number; videos: number }>();
 
@@ -206,7 +211,7 @@ export default function BookingTeamPage() {
             setFilters={setFilters}
             onClear={() => setFilters(INITIAL_FILTERS)}
             showStaffFilter
-            staffOptions={users}
+            staffOptions={bookingStaff}
           />
         </div>
 
