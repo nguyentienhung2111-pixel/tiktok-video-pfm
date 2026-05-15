@@ -25,6 +25,7 @@ const INITIAL_FILTERS: FilterState = {
   minGMV: '',
   minViews: '',
   sourceType: 'koc',
+  staffId: '',
 };
 
 const EMPTY_SUMMARY: VideosSummary = {
@@ -70,6 +71,7 @@ export default function BookingTeamPage() {
         minViews: filters.minViews,
         search: filters.search,
         tagIds: filters.tagIds,
+        assignedUserId: filters.staffId,
       };
 
       const [summaryResult, leaderboardResult, tableResult, usersResult] = await Promise.all([
@@ -199,7 +201,13 @@ export default function BookingTeamPage() {
 
       <div className="p-6 space-y-8" ref={dashboardRef}>
         <div className="export-ignore">
-          <FilterBar filters={filters} setFilters={setFilters} onClear={() => setFilters(INITIAL_FILTERS)} />
+          <FilterBar
+            filters={filters}
+            setFilters={setFilters}
+            onClear={() => setFilters(INITIAL_FILTERS)}
+            showStaffFilter
+            staffOptions={users}
+          />
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-700">

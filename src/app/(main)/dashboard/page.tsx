@@ -26,6 +26,7 @@ const INITIAL_FILTERS: FilterState = {
   minGMV: '',
   minViews: '',
   sourceType: 'all',
+  staffId: '',
 };
 
 const EMPTY_SUMMARY: VideosSummary = {

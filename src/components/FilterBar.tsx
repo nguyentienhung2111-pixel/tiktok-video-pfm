@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Search, Filter, X, ChevronDown, Tag, Package, BarChart3 } from 'lucide-react';
+import { Search, Filter, X, ChevronDown, Tag, Package, BarChart3, UserCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -14,7 +14,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { supabase } from '@/lib/supabase';
-import { Product, Tag as TagType } from '@/types';
+import { Product, Profile, Tag as TagType } from '@/types';
 import { cn } from '@/lib/utils';
 
 export interface FilterState {
@@ -24,15 +24,24 @@ export interface FilterState {
   minGMV: string;
   minViews: string;
   sourceType: string;
+  staffId: string;
 }
 
 interface FilterBarProps {
   filters: FilterState;
   setFilters: (filters: FilterState) => void;
   onClear: () => void;
+  showStaffFilter?: boolean;
+  staffOptions?: Profile[];
 }
 
-export default function FilterBar({ filters, setFilters, onClear }: FilterBarProps) {
+export default function FilterBar({
+  filters,
+  setFilters,
+  onClear,
+  showStaffFilter = false,
+  staffOptions = [],
+}: FilterBarProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [allTags, setAllTags] = useState<TagType[]>([]);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -61,6 +70,7 @@ export default function FilterBar({ filters, setFilters, onClear }: FilterBarPro
     filters.minGMV,
     filters.minViews,
     filters.sourceType !== 'all' ? filters.sourceType : '',
+    showStaffFilter ? filters.staffId : '',
     ...filters.tagIds
   ].filter(Boolean).length;
 
@@ -125,7 +135,12 @@ export default function FilterBar({ filters, setFilters, onClear }: FilterBarPro
 
       {/* Expanded Filters */}
       {isExpanded && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-5 bg-[#161b22] border border-[#30363d] rounded-2xl animate-in zoom-in-95 duration-200">
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-4 p-5 bg-[#161b22] border border-[#30363d] rounded-2xl animate-in zoom-in-95 duration-200",
+            showStaffFilter ? "md:grid-cols-5" : "md:grid-cols-4"
+          )}
+        >
           {/* Product Filter */}
           <div className="space-y-2">
             <label className="text-[10px] font-bold uppercase tracking-wider text-[#94a3b8] flex items-center gap-1.5">
@@ -206,7 +221,7 @@ export default function FilterBar({ filters, setFilters, onClear }: FilterBarPro
             <label className="text-[10px] font-bold uppercase tracking-wider text-[#94a3b8] flex items-center gap-1.5">
               <BarChart3 className="w-3 h-3" /> Views tối thiểu
             </label>
-            <Input 
+            <Input
               type="number"
               placeholder="0"
               value={filters.minViews}
@@ -214,6 +229,31 @@ export default function FilterBar({ filters, setFilters, onClear }: FilterBarPro
               className="bg-[#0d1117] border-[#30363d]"
             />
           </div>
+
+          {/* Staff Filter */}
+          {showStaffFilter && (
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-[#94a3b8] flex items-center gap-1.5">
+                <UserCheck className="w-3 h-3" /> Nhân viên phụ trách
+              </label>
+              <Select
+                value={filters.staffId || 'none'}
+                onValueChange={(val) => setFilters({ ...filters, staffId: val === 'none' ? '' : val })}
+              >
+                <SelectTrigger className="bg-[#0d1117] border-[#30363d]">
+                  <SelectValue placeholder="Chọn nhân viên..." />
+                </SelectTrigger>
+                <SelectContent className="bg-[#161b22] border-[#30363d] text-white">
+                  <SelectItem value="none">Tất cả nhân viên</SelectItem>
+                  {staffOptions.map(s => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.display_name || s.username}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
       )}
     </div>
