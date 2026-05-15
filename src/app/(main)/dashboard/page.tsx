@@ -66,6 +66,7 @@ export default function DashboardPage() {
         minGMV: filters.minGMV,
         minViews: filters.minViews,
         search: filters.search,
+        tagIds: filters.tagIds,
       };
 
       const [summaryResult, tableResult, usersResult] = await Promise.all([

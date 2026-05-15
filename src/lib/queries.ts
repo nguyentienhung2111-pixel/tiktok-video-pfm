@@ -9,6 +9,7 @@ export interface FetchVideosParams {
   minGMV?: string;
   minViews?: string;
   search?: string;
+  tagIds?: string[];
   orderBy?: string;
   orderAsc?: boolean;
   limit?: number;
@@ -47,6 +48,7 @@ export async function fetchVideosWithMetrics(params: FetchVideosParams): Promise
     minGMV,
     minViews,
     search,
+    tagIds,
     orderBy = 'gmv',
     orderAsc = false,
     limit = 50,
@@ -67,6 +69,7 @@ export async function fetchVideosWithMetrics(params: FetchVideosParams): Promise
   if (minGMV) rpcParams.p_min_gmv = parseInt(minGMV);
   if (minViews) rpcParams.p_min_views = parseInt(minViews);
   if (search) rpcParams.p_search = search;
+  if (tagIds && tagIds.length > 0) rpcParams.p_tag_ids = tagIds;
 
   const { data, error } = await supabase.rpc('get_videos_with_period_metrics', rpcParams);
 
@@ -94,6 +97,7 @@ export async function fetchVideosSummary(
     minGMV,
     minViews,
     search,
+    tagIds,
   } = params;
 
   const rpcParams: Record<string, unknown> = {};
@@ -104,6 +108,7 @@ export async function fetchVideosSummary(
   if (minGMV) rpcParams.p_min_gmv = parseInt(minGMV);
   if (minViews) rpcParams.p_min_views = parseInt(minViews);
   if (search) rpcParams.p_search = search;
+  if (tagIds && tagIds.length > 0) rpcParams.p_tag_ids = tagIds;
 
   const { data, error } = await supabase.rpc(
     'get_videos_summary_for_period',

@@ -69,6 +69,7 @@ export default function BookingTeamPage() {
         minGMV: filters.minGMV,
         minViews: filters.minViews,
         search: filters.search,
+        tagIds: filters.tagIds,
       };
 
       const [summaryResult, leaderboardResult, tableResult, usersResult] = await Promise.all([
