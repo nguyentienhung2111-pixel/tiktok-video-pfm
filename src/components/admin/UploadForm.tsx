@@ -265,8 +265,13 @@ function mapRow(
   return { metadata, metrics };
 }
 
-export default function UploadForm() {
-  const [sourceType, setSourceType] = useState<SourceType>('brand');
+interface UploadFormProps {
+  sourceType: SourceType;
+  onSourceTypeChange: (next: SourceType) => void;
+}
+
+export default function UploadForm({ sourceType, onSourceTypeChange }: UploadFormProps) {
+  const setSourceType = onSourceTypeChange;
   const [isUploading, setIsUploading] = useState(false);
   const [reportPeriod, setReportPeriod] = useState<DateRange | undefined>(undefined);
   const [uploadStatus, setUploadStatus] = useState<{

@@ -1,10 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
 import * as XLSX from 'xlsx';
 import { FileDown } from 'lucide-react';
 import DashboardHeader from '@/components/DashboardHeader';
+
+type SourceType = 'brand' | 'koc';
 
 // Dynamically import the UploadForm with no SSR to avoid build-time errors with XLSX
 const UploadForm = dynamic(() => import('@/components/admin/UploadForm'), {
@@ -77,6 +79,8 @@ function downloadTemplate() {
 }
 
 export default function UploadPage() {
+  const [sourceType, setSourceType] = useState<SourceType>('brand');
+
   return (
     <div className="flex flex-col min-h-screen">
       <DashboardHeader
@@ -85,7 +89,7 @@ export default function UploadPage() {
       />
 
       <div className="p-12 max-w-4xl animate-in fade-in duration-500">
-        <UploadForm />
+        <UploadForm sourceType={sourceType} onSourceTypeChange={setSourceType} />
 
         {/* Re-process existing data section */}
         <div className="mt-8">
@@ -94,7 +98,7 @@ export default function UploadPage() {
 
         {/* Delete last upload section */}
         <div className="mt-8">
-          <DeleteLastUploadButton />
+          <DeleteLastUploadButton sourceType={sourceType} />
         </div>
 
         {/* Delete all data section */}

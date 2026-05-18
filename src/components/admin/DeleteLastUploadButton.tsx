@@ -13,7 +13,11 @@ interface UploadRecord {
   created_at: string;
 }
 
-export default function DeleteLastUploadButton() {
+interface DeleteLastUploadButtonProps {
+  sourceType: 'brand' | 'koc';
+}
+
+export default function DeleteLastUploadButton({ sourceType }: DeleteLastUploadButtonProps) {
   const [lastUpload, setLastUpload] = useState<UploadRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<'idle' | 'confirming' | 'deleting' | 'success' | 'error'>('idle');
@@ -25,6 +29,7 @@ export default function DeleteLastUploadButton() {
       const { data, error } = await supabase
         .from('upload_history')
         .select('*')
+        .eq('source_type', sourceType)
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
@@ -43,7 +48,11 @@ export default function DeleteLastUploadButton() {
 
   useEffect(() => {
     fetchLastUpload();
-  }, []);
+    // Reset any transient confirm/success state when tab changes
+    setStatus('idle');
+    setMessage('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceType]);
 
   const handleDelete = async () => {
     if (status === 'idle') {
@@ -160,9 +169,11 @@ export default function DeleteLastUploadButton() {
       <div className="bg-[#161b22] border border-[#30363d] rounded-2xl p-6">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-amber-400">Xoá lần upload gần nhất</h3>
+            <h3 className="text-sm font-semibold text-amber-400">
+              Xoá lần upload gần nhất ({sourceType === 'brand' ? 'Thương hiệu' : 'KOC / Affiliate'})
+            </h3>
             <p className="text-xs text-[#94a3b8] mt-1">
-              Chưa có dữ liệu upload nào.
+              Chưa có dữ liệu upload nào cho tab này.
             </p>
           </div>
         </div>
@@ -174,7 +185,9 @@ export default function DeleteLastUploadButton() {
     <div className="bg-[#161b22] border border-amber-500/30 rounded-2xl p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold text-amber-400">Xoá lần upload gần nhất</h3>
+          <h3 className="text-sm font-semibold text-amber-400">
+              Xoá lần upload gần nhất ({sourceType === 'brand' ? 'Thương hiệu' : 'KOC / Affiliate'})
+            </h3>
           <p className="text-xs text-[#94a3b8] mt-1">
             Xoá tất cả video của lần upload gần nhất. Hành động này không thể hoàn tác.
           </p>
