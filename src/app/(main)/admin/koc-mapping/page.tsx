@@ -41,35 +41,31 @@ export default function KOCMappingPage() {
   async function fetchData() {
     setLoading(true);
     try {
-      // 1. Fetch all KOC videos to group by creator.
-      // Read from video_with_metrics so gmv is the aggregated sum from
-      // video_period_metrics — videos.gmv is no longer written by upload.
-      const { data: videos, error: vError } = await supabase
-        .from('video_with_metrics')
-        .select('creator_id, creator_name, assigned_user_id, gmv')
-        .eq('source_type', 'koc');
+      // 1. Aggregate KOC mappings on the server.
+      // Previously we fetched every KOC video row and grouped in JS,
+      // but that tripped the PostgREST response cap and silently
+      // truncated 6000+ rows. The RPC aggregates per-creator and
+      // returns one row each, already sorted by total_gmv DESC.
+      const { data: rows, error: vError } = await supabase
+        .rpc('get_koc_mappings_summary');
 
       if (vError) throw vError;
 
-      // 2. Group and aggregate
-      const kocGroups = new Map<string, KOCStaffMapping>();
-      videos?.forEach(v => {
-        const id = v.creator_id || 'unknown';
-        const current = kocGroups.get(id) || {
-          creatorId: id,
-          creatorName: v.creator_name || 'N/A',
-          assignedUserId: v.assigned_user_id,
-          videoCount: 0,
-          totalGMV: 0
-        };
-        kocGroups.set(id, {
-          ...current,
-          videoCount: current.videoCount + 1,
-          totalGMV: current.totalGMV + (v.gmv || 0)
-        });
-      });
-
-      setMappings(Array.from(kocGroups.values()).sort((a, b) => b.totalGMV - a.totalGMV));
+      setMappings(
+        (rows ?? []).map((r: {
+          creator_id: string;
+          creator_name: string | null;
+          assigned_user_id: string | null;
+          video_count: number;
+          total_gmv: number;
+        }) => ({
+          creatorId: r.creator_id,
+          creatorName: r.creator_name || 'N/A',
+          assignedUserId: r.assigned_user_id,
+          videoCount: Number(r.video_count) || 0,
+          totalGMV: Number(r.total_gmv) || 0,
+        }))
+      );
 
       // 3. Fetch Staff
       const { data: profiles, error: pError } = await supabase
