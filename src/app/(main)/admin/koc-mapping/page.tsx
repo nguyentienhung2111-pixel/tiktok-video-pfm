@@ -41,9 +41,11 @@ export default function KOCMappingPage() {
   async function fetchData() {
     setLoading(true);
     try {
-      // 1. Fetch all KOC videos to group by creator
+      // 1. Fetch all KOC videos to group by creator.
+      // Read from video_with_metrics so gmv is the aggregated sum from
+      // video_period_metrics — videos.gmv is no longer written by upload.
       const { data: videos, error: vError } = await supabase
-        .from('videos')
+        .from('video_with_metrics')
         .select('creator_id, creator_name, assigned_user_id, gmv')
         .eq('source_type', 'koc');
 

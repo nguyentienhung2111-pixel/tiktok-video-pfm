@@ -1,143 +1,115 @@
 # Báo cáo Lỗi
 
 ## Trạng thái
-ĐÃ SỬA CHỮA — THÀNH CÔNG (2026-05-18)
+ĐÃ SỬA CHỮA LỖI 1, 2, 3 — THÀNH CÔNG (2026-05-18)
 
 ## Tiêu đề Lỗi
-1. Nút "Xoá lần upload gần nhất" không phân biệt tab Thương hiệu (Brand) hay KOC / Affiliate.
-2. Thanh tìm kiếm không hoạt động khi tìm theo ID hoặc tên của KOC (Creator).
+1. Nút "Xoá lần upload gần nhất" không phân biệt tab Thương hiệu (Brand) hay KOC / Affiliate. (Đã sửa)
+2. Thanh tìm kiếm không hoạt động khi tìm theo ID hoặc tên của KOC (Creator). (Đã sửa)
+3. Cột "Tổng GMV" trong màn hình Quản lý Booking KOC hiển thị 0₫ cho tất cả KOC.
 
 ## Mô tả Lỗi
-**Lỗi 1:** Trên trang Upload, khi người dùng đang ở tab "Thương hiệu" và bấm "Xoá lần upload gần nhất", hệ thống lại hiển thị và sẽ xoá file upload gần nhất của toàn hệ thống (có thể là file KOC) thay vì file Brand gần nhất. Lỗi tương tự khi ở tab "KOC / Affiliate".
-**Lỗi 2:** Thanh tìm kiếm (FilterBar) có placeholder là "Tìm theo creator hoặc tiêu đề video...", nhưng khi nhập các ID tài khoản KOC có thực trong dữ liệu (như `thyneeee_`, `metnamnam`, `linhxuanxinh`), hệ thống không trả về kết quả nào.
+**Lỗi 3:** Trên trang Quản lý Booking KOC (`/admin/koc-mapping`), danh sách hiển thị tất cả các KOC/Affiliate cùng số lượng video của họ, tuy nhiên cột Tổng GMV luôn hiển thị là 0₫ dù thực tế các video của họ có doanh thu.
 
 ## Các bước tái hiện
-**Lỗi 1:**
-1. Vào trang "Upload dữ liệu".
-2. Upload một file vào tab "KOC / Affiliate".
-3. Chuyển sang tab "Thương hiệu (Brand)".
-4. Xem thông báo ở phần "Xoá lần upload gần nhất", nhận thấy hệ thống hiển thị thông tin của file KOC vừa upload (file chung gần nhất) thay vì file Brand gần nhất.
-5. Bấm xoá sẽ làm mất dữ liệu KOC dù đang ở tab Thương hiệu.
-
-**Lỗi 2:**
-1. Vào trang Dashboard hoặc KOC/Affiliate.
-2. Ở thanh tìm kiếm "Tìm theo creator hoặc tiêu đề video...", nhập ID creator (ví dụ: `thyneeee_`).
-3. Danh sách hiển thị "Không tìm thấy video nào" dù dữ liệu thực tế có tồn tại KOC này.
+**Lỗi 3:**
+1. Truy cập vào trang "Quản lý Booking KOC" trên thanh menu (hoặc đường dẫn `/admin/koc-mapping`).
+2. Quan sát bảng "Danh sách KOC & Phân bổ nhân viên".
+3. Nhìn vào cột "Tổng GMV", tất cả các dòng đều hiển thị `0 ₫`.
 
 ## Kết quả Thực tế vs Kết quả Mong đợi
-- **Lỗi 1 Thực tế:** Nút xoá luôn lấy file upload gần nhất bất kể tab hiện tại.
-- **Lỗi 1 Mong đợi:** Nút xoá ở tab nào thì chỉ thao tác trên file upload gần nhất của tab đó (dựa vào `source_type`).
-- **Lỗi 2 Thực tế:** Không tìm ra video khi search theo ID/Tên Creator.
-- **Lỗi 2 Mong đợi:** Search trả về đúng các video của Creator ID hoặc Tên tương ứng.
+- **Lỗi 3 Thực tế:** Tất cả các KOC đều có Tổng GMV bằng 0.
+- **Lỗi 3 Mong đợi:** Tổng GMV phải được tính bằng cách cộng dồn GMV của tất cả các video thuộc KOC đó.
 
 ## Ngữ cảnh & Môi trường
-- Trang: `/admin/upload`, `/dashboard`
-- Component: `DeleteLastUploadButton.tsx`, `UploadForm.tsx`, `FilterBar.tsx`
-- Database RPC: `get_videos_with_period_metrics`, `get_videos_summary_for_period`
+- Trang: `/admin/koc-mapping`
+- Component: `src/app/(main)/admin/koc-mapping/page.tsx`
+- Database: Bảng `videos`, view `video_with_metrics`, bảng `video_period_metrics`
 
 ---
 
 ## Phân tích Nguyên nhân Gốc rễ (Root Cause Analysis)
 
-### Lỗi 1: Xoá sai lần upload theo tab
-Trong file `src/app/(main)/admin/upload/page.tsx`, component `UploadForm` và `DeleteLastUploadButton` được render thành các block hoàn toàn độc lập với nhau.
-State `sourceType` (để phân biệt đang ở tab Brand hay KOC) được khai báo và quản lý nội bộ bên trong `UploadForm.tsx`.
-Do đó, `DeleteLastUploadButton.tsx` không hề biết người dùng đang chọn tab nào, nó gọi API lấy lịch sử mới nhất mà không lọc theo `source_type`:
+### Lỗi 3: Cột Tổng GMV hiện 0
+Trong file `src/app/(main)/admin/koc-mapping/page.tsx`, hệ thống thực hiện fetch dữ liệu để tính tổng GMV bằng câu truy vấn sau:
 ```javascript
-// src/components/admin/DeleteLastUploadButton.tsx
-const { data, error } = await supabase
-  .from('upload_history')
-  .select('*')
-  .order('created_at', { ascending: false })
-  .limit(1)
+const { data: videos, error: vError } = await supabase
+  .from('videos')
+  .select('creator_id, creator_name, assigned_user_id, gmv')
+  .eq('source_type', 'koc');
 ```
+Tuy nhiên, trong kiến trúc cơ sở dữ liệu hiện tại (được thay đổi từ đợt migration `create_video_period_metrics`), bảng `videos` không còn lưu trữ trực tiếp các chỉ số metric như `gmv`, `views`, v.v. Các chỉ số này đã được chuyển sang bảng `video_period_metrics` và lưu theo từng kỳ báo cáo.
+
+Để lấy được các chỉ số tổng gộp, hệ thống đã tạo sẵn một View trong Database tên là `video_with_metrics` (kết hợp dữ liệu giữa `videos` và `video_period_metrics`). Vì trang `koc-mapping` vẫn đang query trực tiếp vào bảng gốc `videos` nên giá trị `gmv` trả về luôn bị sai/bằng 0.
 
 ```ascii
-[UploadPage]
- ├── [UploadForm] ------------> Quản lý state: sourceType ('brand' / 'koc')
- │
- └── [DeleteLastUploadButton] -> Không biết sourceType! Lấy file mới nhất toàn hệ thống.
+[KOCMappingPage] 
+  │
+  ├── Query -> Bảng `videos` 
+  │             (chỉ có metadata, không có gmv -> gmv = 0)
+  │
+  └── Lẽ ra phải query -> View `video_with_metrics` 
+                           (đã JOIN sẵn tổng gmv từ video_period_metrics)
 ```
-
-### Lỗi 2: Tìm kiếm không ra Creator
-Thanh tìm kiếm (`FilterBar.tsx`) truyền giá trị `filters.search` tới cơ sở dữ liệu thông qua tham số `p_search` của 2 hàm RPC trên Supabase (`get_videos_with_period_metrics` và `get_videos_summary_for_period`).
-Tuy nhiên, khi xem mã nguồn SQL (ví dụ trong migration mới nhất `add_assigned_user_filter_to_rpcs.sql`), logic lọc tìm kiếm chỉ quét duy nhất cột `video_title`:
-```sql
--- Trong logic của hàm RPC:
-AND (p_search IS NULL OR v.video_title ILIKE '%' || p_search || '%')
-```
-Hậu quả là dù UI có ghi "Tìm theo creator...", hệ thống thực chất đã bỏ qua không tìm kiếm trong các cột `creator_name` hay `creator_id`.
 
 ## Đề xuất Sửa lỗi (Proposed Fixes)
 
-### Lỗi 1
-- **Phương án 1 (Khuyến nghị):** "Lift state up" - Đưa state `sourceType` từ `UploadForm` lên component cha là `UploadPage`. Sau đó truyền `sourceType` xuống dưới dạng props cho cả `UploadForm` và `DeleteLastUploadButton`. Trong `DeleteLastUploadButton`, cập nhật câu query thêm `.eq('source_type', sourceType)`.
-- **Phương án 2:** Sử dụng React Context hoặc Zustand để quản lý global state cho trang Upload (hơi dư thừa cho một trang nhỏ).
-
-### Lỗi 2
-- **Phương án 1 (Khuyến nghị):** Tạo một file migration SQL mới để cập nhật (CREATE OR REPLACE) 2 hàm RPC `get_videos_with_period_metrics` và `get_videos_summary_for_period`. Cập nhật mệnh đề WHERE để `p_search` quét cả `creator_name` và `creator_id`:
-```sql
-AND (
-  p_search IS NULL OR 
-  v.video_title ILIKE '%' || p_search || '%' OR
-  v.creator_name ILIKE '%' || p_search || '%' OR
-  v.creator_id ILIKE '%' || p_search || '%'
-)
+### Lỗi 3
+- **Phương án 1 (Khuyến nghị):** Sửa lại câu truy vấn Supabase trong `src/app/(main)/admin/koc-mapping/page.tsx` để lấy dữ liệu từ view `video_with_metrics` thay vì bảng `videos`.
+```javascript
+// Đổi 'videos' thành 'video_with_metrics'
+const { data: videos, error: vError } = await supabase
+  .from('video_with_metrics')
+  .select('creator_id, creator_name, assigned_user_id, gmv')
+  .eq('source_type', 'koc');
 ```
 
 ## Kế hoạch Xác minh
-1. **Lỗi 1:** Mở trang Upload, chọn tab "Thương hiệu". Component xoá phải báo đúng tên file Brand gần nhất. Đổi sang tab KOC, component phải lập tức cập nhật hiện tên file KOC gần nhất. 
-2. **Lỗi 2:** Chạy script migration SQL mới. Mở thanh tìm kiếm trên web, gõ các ID `thyneeee_`, `metnamnam`, `linhxuanxinh` và xác nhận video của các KOC này đã hiện ra chính xác.
+1. **Lỗi 3:** Mở trang "Quản lý Booking KOC". Kiểm tra cột "Tổng GMV" của các KOC (ví dụ: `decoco.accessories`, `gnudaxuan_0102`) xem đã hiển thị số tiền chính xác thay vì `0 ₫` hay chưa. (Có thể so sánh chéo với GMV của KOC đó trên Dashboard để chắc chắn số liệu đúng).
+
+---
+*(Phần phân tích và sửa chữa cho Lỗi 1 và Lỗi 2 đã được lưu trữ lại ở các báo cáo trước)*
 
 ---
 
-## Kết quả Sửa chữa & Xác minh (2026-05-18)
+## Kết quả Sửa chữa & Xác minh Lỗi 3 (2026-05-18)
+
+### Điều chỉnh Kế hoạch
+Khi review, phát hiện view `video_with_metrics` được khai báo trong file `create_video_period_metrics.sql` **chưa từng được apply lên DB remote** (`list_migrations` không thấy migration này). Do đó chỉ đổi câu query thôi sẽ không đủ — cần migration mới để tạo view trước. Đây là điều chỉnh duy nhất so với "Đề xuất Sửa lỗi" gốc.
 
 ### Các thay đổi đã áp dụng
-- `src/app/(main)/admin/upload/page.tsx`: Nâng state `sourceType` lên `UploadPage` và truyền xuống cả `UploadForm` và `DeleteLastUploadButton`.
-- `src/components/admin/UploadForm.tsx`: Chuyển `UploadForm` thành controlled component nhận `sourceType` + `onSourceTypeChange` qua props (giữ nguyên toàn bộ logic upload).
-- `src/components/admin/DeleteLastUploadButton.tsx`: Nhận `sourceType` prop, thêm `.eq('source_type', sourceType)` vào câu query, và re-fetch khi đổi tab. Header hiển thị rõ tab đang chọn.
-- `supabase/migrations/add_creator_search_to_rpcs.sql` (mới): `CREATE OR REPLACE` hai hàm `get_videos_with_period_metrics` và `get_videos_summary_for_period` để `p_search` quét cả `video_title`, `creator_name`, và `creator_id`.
+- `supabase/migrations/create_video_with_metrics_view.sql` (mới): `CREATE OR REPLACE VIEW video_with_metrics` (JOIN `videos` với `video_period_metrics`, group theo video, SUM gmv/views/orders/…). Đã apply lên Supabase project `mrmwwlqolqsoyuxasrta`.
+- `src/app/(main)/admin/koc-mapping/page.tsx` (1 dòng đổi `.from()`): chuyển từ `.from('videos')` sang `.from('video_with_metrics')`. Logic group-by JavaScript giữ nguyên — chỉ là nguồn dữ liệu khác.
 
 ### Xác minh
 
-**Type-check & Lint (chỉ tính lỗi mới):**
+**Type-check:**
 ```
 $ npx tsc --noEmit
 (no output — passed)
-
-$ npx eslint <changed files>
-→ 3 lỗi `any` + 1 warning đều là code cũ, KHÔNG do bản fix tạo ra.
 ```
 
-**Lỗi 1 — Tách lần upload gần nhất theo tab (chạy trên DB thật):**
+**Trực tiếp trên DB (mô phỏng đúng câu query mới + group-by mà React làm):**
 ```sql
-SELECT 'brand latest', file_name, created_at FROM upload_history
-WHERE source_type='brand' ORDER BY created_at DESC LIMIT 1;
--- → TikTok_Upload_Template_Brand_11.05.26_17.05.26.xlsx | 2026-05-18 04:51:27 UTC
-
-SELECT 'koc latest',   file_name, created_at FROM upload_history
-WHERE source_type='koc'   ORDER BY created_at DESC LIMIT 1;
--- → TikTok_Upload_Template_Aff_11.05.26_17.05.26.xlsx  | 2026-05-18 10:22:18 UTC
-
-SELECT 'overall',      file_name, created_at FROM upload_history
-ORDER BY created_at DESC LIMIT 1;
--- → TikTok_Upload_Template_Aff_11.05.26_17.05.26.xlsx  | 2026-05-18 10:22:18 UTC  ← BUG cũ trả về cái này cho cả 2 tab
+WITH page_rows AS (
+  SELECT creator_id, creator_name, gmv
+  FROM video_with_metrics
+  WHERE source_type = 'koc'
+)
+SELECT creator_name, COUNT(*) AS video_count, SUM(gmv) AS total_gmv
+FROM page_rows
+GROUP BY creator_id, creator_name
+ORDER BY total_gmv DESC LIMIT 5;
 ```
-Kết quả: với `sourceType='brand'`, câu query trả về đúng file Brand chứ không còn lấy file KOC mới hơn. **PASS**
-
-**Lỗi 2 — RPC quét creator_name / creator_id (chạy sau migration):**
-```sql
-SELECT 'thyneeee_'    , COUNT(*) FROM get_videos_with_period_metrics(p_search => 'thyneeee_'   , p_limit => 100); -- 4
-SELECT 'metnamnam'    , COUNT(*) FROM get_videos_with_period_metrics(p_search => 'metnamnam'   , p_limit => 100); -- 1
-SELECT 'linhxuanxinh' , COUNT(*) FROM get_videos_with_period_metrics(p_search => 'linhxuanxinh', p_limit => 100); -- 1
-SELECT 'NULL'         , COUNT(*) FROM get_videos_with_period_metrics(p_search => NULL          , p_limit => 100); -- 100
-
-SELECT total_videos, total_creators, total_gmv
-FROM get_videos_summary_for_period(p_search => 'thyneeee_');
--- → total_videos=4, total_creators=1, total_gmv=2316885
+Kết quả:
 ```
-Trước fix: cả 3 query trả 0 dòng (vì chỉ scan `video_title`). Sau fix: trả đúng số video thực tế của từng creator. **PASS**
+minhhai10112024     5 videos    764,513,066 ₫
+duwn216            31 videos    701,594,119 ₫
+anhlinh.emhuong    79 videos    413,093,837 ₫
+mywanh_             1 video     249,544,812 ₫
+phomaiquenef        3 videos    148,297,940 ₫
+```
+Trước fix: tất cả `0 ₫` (vì `videos.gmv` không còn được upload ghi vào). Sau fix: hiển thị đúng tổng doanh thu cộng dồn từ `video_period_metrics`. **PASS**
 
-### Kết luận
-**Thành công** — Cả 2 lỗi đã được sửa, xác minh trực tiếp trên DB Supabase (`mrmwwlqolqsoyuxasrta`).
+### Kết luận Lỗi 3
+**Thành công.**
