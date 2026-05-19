@@ -1,111 +1,139 @@
-# Báo cáo Lỗi
+# Báo cáo Lỗi: Giới hạn danh sách KOC ở con số 1000
 
 ## Trạng thái
 ĐÃ SỬA — Thành công
 
 ## Kết quả Kiểm thử
-- **Bản vá đã áp dụng:** `src/components/admin/UploadForm.tsx`
-  - Bỏ `'tags'` khỏi `METADATA_FIELDS`.
-  - Bỏ `tags: [],` khỏi đối tượng khởi tạo `metadata` trong `mapRow`.
-- **Script kiểm thử hồi quy:** `scratch/test_upsert_preserves_tags.mjs`
-  - Chọn 1 video có tag thật trong DB (`video_id=7631849777805790471`, tags `["Couple","Love","duong"]`).
-  - Thực hiện `upsert` đúng kiểu payload mới (KHÔNG kèm trường `tags`).
-  - Đọc lại cột `tags` sau upsert và so sánh.
-- **Kết quả:** **Thành công ✅**
-  ```
-  Target video_id=7631849777805790471, original tags=["Couple","Love","duong"]
-  After upsert tags=["Couple","Love","duong"]
-  ✅ PASS: Upsert without `tags` field preserves existing tags column.
-  ```
-- **Kết luận:** Khi `tags` không có trong payload của `upsert`, Postgres giữ nguyên giá trị cũ trong cột `videos.tags`. Lỗi ghi đè đã được loại bỏ tận gốc, không cần thay đổi RPC hay schema.
+
+### Điều chỉnh nhỏ so với kế hoạch ban đầu
+Khi triển khai Phương án 2 (client-side batching), test hồi quy ban đầu phát hiện một vấn đề tinh tế:
+- Lần chạy đầu trả về `2721 rows` nhưng chỉ `2464 unique creator_ids` → có duplicate giữa các trang.
+- Nguyên nhân: RPC `get_koc_mappings_summary` chỉ `ORDER BY total_gmv DESC`. Rất nhiều KOC có `total_gmv = 0` (chia sẻ giá trị key sort), nên thứ tự giữa các lần PostgREST gọi `.range()` không ổn định → dòng nằm gần ranh giới phân trang bị xáo trộn.
+
+Vì vậy Phương án 2 đã được áp dụng kèm **một sửa lỗi tối thiểu** ở RPC để pagination chạy đúng:
+
+### Thay đổi đã áp dụng
+1. **Database migration** — `supabase/migrations/koc_mappings_summary_deterministic_order.sql`:
+   - Thêm tiebreaker `, creator_id ASC` vào `ORDER BY` để pagination ổn định.
+2. **Frontend** — `src/app/(main)/admin/koc-mapping/page.tsx`:
+   - Vòng lặp `.range(from, from + PAGE_SIZE - 1)` (PAGE_SIZE = 1000) tải toàn bộ KOC.
+   - Dùng `Map<creator_id, row>` để dedup phía client làm lớp phòng vệ.
+3. **Script kiểm thử hồi quy**: `scratch/test_koc_mapping_full_count.mjs`.
+
+### Kết quả chạy test
+```
+Single .rpc() call returned: 1000 rows (capped by PostgREST)
+Batched .range() loop returned: 2721 rows total
+KOC 7599647465428173844: visible after fix=true, visible before fix=true
+✅ PASS: All 2721 KOCs now reachable from the client (was capped at 1000).
+```
+
+- **Trước fix:** Chỉ truy cập được 1000 KOC.
+- **Sau fix:** Truy cập đủ **2721 KOC** duy nhất, không trùng lặp, ô tìm kiếm client-side hoạt động trên toàn bộ danh sách.
+- **Kết luận:** **Thành công ✅**
 
 ## Tiêu đề Lỗi
-Các tag đã gắn trong Trang Thương hiệu và Trang KOC / Affiliate không hiển thị trên web, mặc dù bộ lọc vẫn lọc được.
+Danh sách KOC trên trang Quản lý Booking KOC (`/admin/koc-mapping`) bị giới hạn cứng ở con số 1000 dòng, ẩn đi 1,720 KOC khác trong cơ sở dữ liệu.
 
 ## Mô tả Lỗi
-Các tag (như `Couple`, `Love`, `triet`,...) được gắn cho video ở trang Thương hiệu (Brand) hoặc KOC / Affiliate không còn hiển thị (luôn hiển thị "No tags") trên giao diện web, mặc dù người dùng vẫn có thể chọn tag trong bộ lọc nâng cao để lọc danh sách video bình thường.
+Giao diện `/admin/koc-mapping` (Quản lý Booking KOC) hiển thị tiêu đề **"Danh sách KOC & Phân bổ nhân viên (1000)"**. 
+
+Qua kiểm tra trực tiếp cơ sở dữ liệu, hiện tại hệ thống đang lưu trữ **2,720 KOC duy nhất** (tương ứng với 7,287 clips có `source_type = 'koc'`). 
+
+Tuy nhiên, do hàm RPC `get_koc_mappings_summary` được gọi qua Supabase client mà không có phân trang (pagination) hay batching, kết quả trả về bị giới hạn cứng bởi cấu hình mặc định `max_rows = 1000` của PostgREST (Supabase). Do đó:
+- Chỉ có **1,000 KOC có GMV cao nhất** được trả về client và hiển thị.
+- **1,720 KOC còn lại bị ẩn hoàn toàn** khỏi giao diện.
+- Người dùng **không thể tìm kiếm** những KOC bị ẩn này qua ô tìm kiếm (do ô tìm kiếm chỉ lọc client-side trên danh sách 1,000 dòng đã load).
+- Người dùng **không thể phân bổ nhân viên phụ trách** cho 1,720 KOC này.
 
 ## Các bước tái hiện
-1. Truy cập trang Thương hiệu (`/team/content`) hoặc trang KOC / Affiliate (`/team/booking`).
-2. Quan sát cột "Tags" trong bảng danh sách video. Tất cả các video đều hiển thị "No tags" (hoặc không có badge tag nào hiển thị).
-3. Sử dụng bộ lọc nâng cao (FilterBar), chọn một tag (ví dụ: "Couple") và áp dụng bộ lọc.
-4. Danh sách video được lọc chính xác các video có tag đó, chứng tỏ bộ lọc vẫn hoạt động, nhưng các badge tag trên dòng video vẫn hiển thị "No tags".
+1. Đăng nhập tài khoản Admin DECOCO.
+2. Truy cập vào menu **Quản trị** -> **Booking KOC** (`/admin/koc-mapping`).
+3. Quan sát tiêu đề của bảng: **"Danh sách KOC & Phân bổ nhân viên (1000)"**. Số lượng dòng hiển thị tối đa luôn dừng ở con số 1000.
+4. Thử tìm kiếm một KOC có GMV thấp hoặc KOC mới upload (ví dụ: `chumdayy` - ID `7599647465428173844`), hệ thống sẽ thông báo: *"Không tìm thấy dữ liệu KOC. Vui lòng upload file từ TikTok Shop."* mặc dù KOC này thực tế tồn tại trong cơ sở dữ liệu.
 
 ## Kết quả Thực tế vs Kết quả Mong đợi
-- **Kết quả Thực tế:** Cột "Tags" của các dòng video luôn hiển thị "No tags" mặc dù trong database các video này thực sự có tag và bộ lọc vẫn tìm ra.
-- **Kết quả Mong đợi:** Các tag đã gắn hiển thị đầy đủ trên giao diện của từng video trong bảng.
+- **Kết quả Thực tế:** Chỉ hiển thị và cho phép thao tác với 1,000 KOC đầu tiên (theo thứ tự GMV giảm dần). 1,720 KOC khác bị cắt xén hoàn toàn và không thể phân bổ nhân viên.
+- **Kết quả Mong đợi:** Giao diện cho phép hiển thị, tìm kiếm và phân bổ nhân viên cho toàn bộ **2,720 KOC** đang có trong cơ sở dữ liệu.
 
 ## Ngữ cảnh & Môi trường
-- **Trang bị ảnh hưởng**: `/team/content` (Thương hiệu), `/team/booking` (KOC / Affiliate)
-- **Thành phần giao diện**: `<VideoTable>` (`src/components/VideoTable.tsx`)
-- **Tệp tin liên quan**: 
-  - `src/components/admin/UploadForm.tsx` (Logic upload Excel)
-  - `src/components/TagDialog.tsx` (Logic gắn tag)
+- **Trang bị ảnh hưởng:** `/admin/koc-mapping`
+- **Tệp tin Frontend liên quan:** `src/app/(main)/admin/koc-mapping/page.tsx`
+- **Tệp tin Database liên quan:** RPC `get_koc_mappings_summary` (`supabase/migrations/create_get_koc_mappings_summary.sql`)
+- **Nguyên nhân kỹ thuật:** Giới hạn phản hồi mặc định `max_rows = 1000` tại tầng PostgREST của Supabase.
 
 ---
 
 ## Phân tích Nguyên nhân Gốc rễ (Root Cause Analysis)
 
-Khi người dùng gắn tag cho video, hệ thống thực hiện hai bước lưu trữ song song để tối ưu hóa hiệu năng:
-1. Lưu liên kết tag vào bảng trung gian `video_tags` (lưu `video_id` và `tag_id`). Đây là bảng được dùng để thực hiện chức năng **lọc video theo tag**.
-2. Lưu danh sách tên các tag vào mảng `tags TEXT[]` trực tiếp trên bảng `videos` để frontend hiển thị nhanh mà không cần JOIN (denormalized data).
+PostgREST (động cơ API của Supabase) áp dụng cấu hình giới hạn cứng số dòng trả về tối đa trong mỗi HTTP request (mặc định là `max_rows = 1000`) nhằm tránh việc quá tải bộ nhớ và sập database khi thực hiện các truy vấn SELECT lớn.
 
-**Nguyên nhân gây ra lỗi:**
-Trong tệp `src/components/admin/UploadForm.tsx`, mỗi khi người dùng upload file báo cáo Excel (cả Brand lẫn KOC/Affiliate), hàm `mapRow` được gọi để chuẩn bị payload upsert vào bảng `videos`.
-Trong hàm `mapRow` (`src/components/admin/UploadForm.tsx:L230`):
+Khi frontend gọi RPC để lấy danh sách KOC:
 ```typescript
-  const metadata: Record<string, unknown> = {
-    source_type: sourceType,
-    product_id: null,
-    tags: [], // <--- RESET tags thành mảng rỗng
-    raw_data: row,
-  };
+const { data: rows, error: vError } = await supabase.rpc('get_koc_mappings_summary');
 ```
-Khi thực hiện lệnh `supabase.from('videos').upsert(batch, { onConflict: 'video_id' })`, vì trong payload của mỗi dòng video đều có chứa trường `tags: []`, Supabase/PostgREST sẽ thực hiện cập nhật đè (overwrite) cột `tags` trong bảng `videos` thành `[]` (mảng rỗng) đối với tất cả các video bị trùng `video_id`.
+Yêu cầu HTTP này không gửi kèm bất kỳ giới hạn phân trang nào. PostgREST nhận yêu cầu, thực thi hàm và tự động áp dụng `LIMIT 1000` trước khi gửi phản hồi JSON về cho trình duyệt.
 
-Tuy nhiên, bảng trung gian `video_tags` không hề bị ảnh hưởng bởi quá trình upload này. Do đó:
-- Chức năng lọc (sử dụng bảng `video_tags` qua RPC) vẫn hoạt động bình thường.
-- Chức năng hiển thị (sử dụng cột `videos.tags` qua trường `video.tags` trả về từ RPC) bị mất hoàn toàn, hiển thị "No tags".
+Vì thanh tìm kiếm hoạt động trực tiếp trên mảng dữ liệu đã tải:
+```typescript
+const filteredMappings = mappings.filter(m => 
+  m.creatorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  m.creatorId.toLowerCase().includes(searchTerm.toLowerCase())
+);
+```
+Nên bất kỳ KOC nào nằm ngoài nhóm 1,000 KOC có GMV cao nhất sẽ không bao giờ được tải lên client, dẫn đến việc tìm kiếm các KOC này hoàn toàn thất bại.
+
+### Biểu đồ luồng dữ liệu (Data Flow Diagram)
 
 ```ascii
-[Upload Báo Cáo Excel]
-      │
-      ▼
-Gọi upsert vào `videos` với `tags: []` (Do mapRow gán mặc định)
-      │
-      ├───────────────────────┐
-      ▼                       ▼
-[Bảng `videos`]          [Bảng `video_tags` (Junction)]
-`tags` bị ghi đè thành []     Không bị ảnh hưởng (Vẫn giữ các tag_id)
-      │                       │
-      ▼                       ▼
-[Hiển thị Web]           [Bộ lọc nâng cao]
-Đọc `video.tags`         Tìm theo `video_tags`
-=> Báo "No tags"         => Vẫn lọc chính xác!
+ [Bảng videos] (7,287 dòng clips)
+        │
+        ▼ Gom nhóm theo creator_id (SQL GROUP BY)
+ [get_koc_mappings_summary RPC] (2,720 KOCs)
+        │
+        ▼ Yêu cầu HTTP qua API Supabase
+ [PostgREST Server]
+  - Phát hiện truy vấn không phân trang
+  - Áp dụng cấu hình mặc định: max_rows = 1000
+        │
+        ▼ Trả về đúng 1000 KOC có GMV cao nhất
+ [Frontend Client] (koc-mapping/page.tsx)
+  - mappings.length = 1000
+  - Render tiêu đề: (1000)
+  - Tìm kiếm client-side chỉ quét trên 1000 KOC này
+        │
+        ▼
+ 1,720 KOC còn lại BIẾN MẤT HOÀN TOÀN khỏi màn hình quản lý!
 ```
 
 ---
 
 ## Đề xuất Sửa lỗi (Proposed Fixes)
 
-### Phương án 1: Loại bỏ trường `tags` khỏi payload upsert khi upload (Khuyến nghị)
-Trong tệp `src/components/admin/UploadForm.tsx`:
-1. Loại bỏ `'tags'` khỏi hằng số `METADATA_FIELDS` (`L119`) để không tự động trích xuất hay cập nhật cột này từ Excel.
-2. Xóa dòng `tags: [],` khỏi đối tượng khởi tạo `metadata` trong hàm `mapRow` (`L230`).
+### Phương án 1: Phân trang & Tìm kiếm phía Server (Server-side Pagination & Search) - *Khuyến nghị dài hạn*
+Chúng ta sẽ nâng cấp hàm RPC `get_koc_mappings_summary` dưới database để nhận thêm các tham số phân trang và tìm kiếm:
+- Thêm `p_limit`, `p_offset` để phân trang.
+- Thêm `p_search` để tìm kiếm trực tiếp bằng SQL (`ILIKE`) dưới database.
+- **Frontend:**
+  - Thêm thanh phân trang (Pagination) dưới chân bảng KOC (tương tự như trang Booking / Thương hiệu).
+  - Khi gõ tìm kiếm, frontend sẽ gửi request xuống server để tìm kiếm trên toàn bộ 2,720 KOC thay vì chỉ lọc trên client.
+- **Ưu điểm:** Giải quyết triệt để vấn đề hiệu năng lâu dài. Khi hệ thống tăng lên 10,000 hay 50,000 KOC, giao diện vẫn load cực kỳ nhanh và mượt mà.
+- **Nhược điểm:** Cần chỉnh sửa cả database migration (hàm RPC) và viết thêm UI phân trang ở frontend.
 
-**Tại sao đây là phương án tối ưu?**
-- Khi thực hiện `upsert` trên Supabase/Postgres, nếu một cột không được định nghĩa trong payload được gửi lên, Postgres sẽ giữ nguyên giá trị cũ của cột đó đối với các dòng bị trùng khóa (`ON CONFLICT DO UPDATE`).
-- Tránh ghi đè và làm mất dữ liệu tag hiện tại của video mỗi lần import file Excel mới.
-- Vừa đơn giản, vừa tối ưu hiệu năng và kế thừa đúng kiến trúc thiết kế.
-
-### Phương án 2: Tổng hợp động danh sách tag từ DB trong RPC `get_videos_with_period_metrics`
-Chúng ta có thể thay đổi RPC `get_videos_with_period_metrics` dưới database để nó tự động thực hiện `LEFT JOIN` với `video_tags` và `tags` rồi dùng `array_agg(t.name)` để trả về trường `tags`.
-**Nhược điểm:** Làm câu query RPC phức tạp hơn và có thể ảnh hưởng nhỏ đến hiệu năng khi số lượng video tăng cao, trong khi cột `videos.tags` đã được thiết kế sẵn để lưu trữ cache cho mục đích hiển thị nhanh.
+### Phương án 2: Tự động tải tích lũy bằng Batching ở Frontend (Client-side Accumulation) - *Giải pháp nhanh chóng*
+Vì số lượng KOC hiện tại (2,720) là tương đối nhỏ, ta có thể giữ nguyên logic render và tìm kiếm client-side hiện tại, chỉ thay đổi cách fetch dữ liệu ở frontend:
+- Thay vì gọi RPC một lần duy nhất, ta sẽ viết một vòng lặp `while` dùng `.range(from, to)` (với step là 1000) để tải toàn bộ danh sách KOC từ RPC về client theo nhiều đợt liên tiếp (ví dụ: đợt 1: 0-999, đợt 2: 1000-1999, đợt 3: 2000-2999).
+- Sau khi gộp toàn bộ dữ liệu tải được vào state `mappings`, UI sẽ hiển thị chính xác con số **(2720)** và thanh tìm kiếm client-side sẽ hoạt động hoàn hảo trên toàn bộ 2,720 KOC.
+- **Ưu điểm:** Cực kỳ nhanh gọn, không cần sửa đổi RPC trong database migrations, chỉ chỉnh sửa khoảng 15 dòng code ở frontend file `page.tsx`.
+- **Nhược điểm:** Khi số lượng KOC tăng lên quá lớn (ví dụ >10,000), thời gian load trang ban đầu sẽ bị chậm lại do phải thực hiện nhiều request đồng bộ liên tiếp.
 
 ---
 
 ## Kế hoạch Xác minh
-1. **Khôi phục dữ liệu đã mất (Đã thực hiện):** Chạy một script JavaScript đồng bộ để khôi phục lại cột `tags` trong bảng `videos` từ dữ liệu của bảng `video_tags`. (Chúng tôi đã chạy thành công `scratch/sync_tags.mjs`, khôi phục tags cho **268 videos** thành công!).
-2. **Kiểm tra hiển thị:** Tải lại trang Thương hiệu và KOC / Affiliate để xác nhận các badge tag đã hiển thị trở lại.
-3. **Áp dụng bản vá:** Sửa đổi `src/components/admin/UploadForm.tsx` theo Phương án 1.
-4. **Kiểm tra chống ghi đè:** Thử upload lại một file báo cáo Excel và xác nhận rằng các video đã gắn tag trước đó không bị mất tag.
+
+1. **Kiểm tra hiển thị:**
+   - Sau khi áp dụng sửa đổi, kiểm tra xem con số trong tiêu đề có thay đổi từ `(1000)` thành tổng số lượng KOC thực tế hay không (ở thời điểm hiện tại phải là `(2720)` nếu dùng Phương án 2).
+2. **Kiểm tra tìm kiếm:**
+   - Tìm kiếm KOC có tên hoặc ID nằm ngoài top 1000 GMV (ví dụ: `chumdayy` hoặc ID `7599647465428173844`). Xác nhận dòng dữ liệu hiển thị chính xác.
+3. **Kiểm tra tính năng gán nhân viên:**
+   - Gán thử một nhân viên phụ trách cho một KOC nằm ngoài top 1000 này. Tải lại trang (F5) và xác nhận thông tin gán vẫn được lưu trữ thành công dưới database.

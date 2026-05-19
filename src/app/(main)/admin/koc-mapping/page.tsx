@@ -42,23 +42,29 @@ export default function KOCMappingPage() {
     setLoading(true);
     try {
       // 1. Aggregate KOC mappings on the server.
-      // Previously we fetched every KOC video row and grouped in JS,
-      // but that tripped the PostgREST response cap and silently
-      // truncated 6000+ rows. The RPC aggregates per-creator and
-      // returns one row each, already sorted by total_gmv DESC.
-      const { data: rows, error: vError } = await supabase
-        .rpc('get_koc_mappings_summary');
-
-      if (vError) throw vError;
+      // PostgREST caps responses at max_rows=1000, so we page through
+      // the RPC result via .range() until a partial batch comes back.
+      type Row = {
+        creator_id: string;
+        creator_name: string | null;
+        assigned_user_id: string | null;
+        video_count: number;
+        total_gmv: number;
+      };
+      const PAGE_SIZE = 1000;
+      const byId = new Map<string, Row>();
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const { data: batch, error: vError } = await supabase
+          .rpc('get_koc_mappings_summary')
+          .range(from, from + PAGE_SIZE - 1);
+        if (vError) throw vError;
+        const rows = (batch ?? []) as Row[];
+        for (const r of rows) byId.set(r.creator_id, r);
+        if (rows.length < PAGE_SIZE) break;
+      }
 
       setMappings(
-        (rows ?? []).map((r: {
-          creator_id: string;
-          creator_name: string | null;
-          assigned_user_id: string | null;
-          video_count: number;
-          total_gmv: number;
-        }) => ({
+        Array.from(byId.values()).map((r) => ({
           creatorId: r.creator_id,
           creatorName: r.creator_name || 'N/A',
           assignedUserId: r.assigned_user_id,
