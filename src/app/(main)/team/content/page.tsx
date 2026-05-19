@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { TrendingUp, TrendingDown, Tv, FileDown, Loader2, ShoppingBag, ChevronLeft, ChevronRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, Tv, FileDown, Loader2, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { VideoWithMetrics, Profile } from '@/types';
@@ -36,6 +36,15 @@ const EMPTY_SUMMARY: VideosSummary = {
   totalCreators: 0,
 };
 
+type TagLbRow = { group_name: string; tag_id: string; tag_name: string; total_gmv: number | string; video_count: number | string; rank_in_group: number };
+type TagLbEntry = { id: string; name: string; gmv: number; videoCount: number };
+
+const TAG_GROUP_TABS: ReadonlyArray<{ key: 'Format' | 'Hook' | 'Sound'; label: string; groupName: string }> = [
+  { key: 'Format', label: 'Format', groupName: 'Content Format' },
+  { key: 'Hook',   label: 'Hook',   groupName: 'Hook Style'    },
+  { key: 'Sound',  label: 'Sound',  groupName: 'Sound'         },
+];
+
 export default function ContentTeamPage() {
   const { user } = useUser();
   const [summary, setSummary] = useState<VideosSummary>(EMPTY_SUMMARY);
@@ -43,6 +52,8 @@ export default function ContentTeamPage() {
   // unaffected because the RPC already orders gmv DESC server-side.
   const [leaderboardVideos, setLeaderboardVideos] = useState<VideoWithMetrics[]>([]);
   const [paginatedVideos, setPaginatedVideos] = useState<VideoWithMetrics[]>([]);
+  const [tagLeaderboard, setTagLeaderboard] = useState<Record<string, TagLbEntry[]>>({});
+  const [activeTagTab, setActiveTagTab] = useState<'Format' | 'Hook' | 'Sound'>('Format');
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState(INITIAL_FILTERS);
@@ -73,7 +84,20 @@ export default function ContentTeamPage() {
         tagIds: filters.tagIds,
       };
 
-      const [summaryResult, leaderboardResult, tableResult, usersResult] = await Promise.all([
+      const tagRpcArgs = {
+        p_period_start: periodStart ?? null,
+        p_period_end: periodEnd ?? null,
+        p_source_type: 'brand',
+        p_product_id: filters.productId || null,
+        p_min_gmv: filters.minGMV ? parseInt(filters.minGMV) : null,
+        p_min_views: filters.minViews ? parseInt(filters.minViews) : null,
+        p_search: filters.search || null,
+        p_tag_ids: filters.tagIds && filters.tagIds.length > 0 ? filters.tagIds : null,
+        p_groups: TAG_GROUP_TABS.map(t => t.groupName),
+        p_limit_per_group: 5,
+      };
+
+      const [summaryResult, leaderboardResult, tableResult, usersResult, tagLbResult] = await Promise.all([
         fetchVideosSummary(baseParams),
         fetchVideosWithMetrics({ ...baseParams, limit: 5000, offset: 0 }),
         fetchVideosWithMetrics({
@@ -82,6 +106,7 @@ export default function ContentTeamPage() {
           offset: (page - 1) * pageSize,
         }),
         supabase.from('profiles').select('*').eq('is_active', true),
+        supabase.rpc('get_top_tags_by_group_leaderboard', tagRpcArgs),
       ]);
 
       setSummary(summaryResult);
@@ -91,6 +116,19 @@ export default function ContentTeamPage() {
 
       if (usersResult.error) throw usersResult.error;
       setUsers((usersResult.data as Profile[]) || []);
+
+      if (tagLbResult.error) throw tagLbResult.error;
+      const grouped: Record<string, TagLbEntry[]> = {};
+      for (const row of (tagLbResult.data ?? []) as TagLbRow[]) {
+        const list = grouped[row.group_name] ?? (grouped[row.group_name] = []);
+        list.push({
+          id: row.tag_id,
+          name: row.tag_name,
+          gmv: Number(row.total_gmv) || 0,
+          videoCount: Number(row.video_count) || 0,
+        });
+      }
+      setTagLeaderboard(grouped);
     } catch (error) {
       console.error('Lỗi khi tải dữ liệu Thương hiệu:', error);
     } finally {
@@ -196,13 +234,70 @@ export default function ContentTeamPage() {
             entries={productLeaderboard}
             valueLabel={formatCurrency}
           />
-          <Card className="border-[#30363d] bg-[#161b22] overflow-hidden">
-            <CardContent className="flex flex-col items-center justify-center p-12 text-center h-full gap-4">
-              <ShoppingBag className="w-12 h-12 text-primary/40" />
-              <div>
-                <p className="font-bold text-white">Xếp hạng Hiệu quả Content</p>
-                <p className="text-xs text-muted-foreground mt-1">Phân tích sâu về các kịch bản và format video mang lại chuyển đổi cao nhất.</p>
+          <Card className="border-[#30363d] bg-[#161b22] overflow-hidden flex flex-col">
+            <CardHeader className="pb-2 flex flex-row items-center justify-between border-b border-[#30363d] bg-[#0d1117]/50">
+              <CardTitle className="text-sm font-black uppercase tracking-widest text-[#94a3b8] flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-500" />
+                Xếp hạng Hiệu quả Content
+              </CardTitle>
+              <div className="flex items-center gap-1 export-ignore">
+                {TAG_GROUP_TABS.map(tab => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTagTab(tab.key)}
+                    className={cn(
+                      "px-3 py-1 text-xs font-bold uppercase tracking-wider rounded-md transition-colors",
+                      activeTagTab === tab.key
+                        ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                        : "text-muted-foreground hover:text-white hover:bg-white/[0.04] border border-transparent"
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
+            </CardHeader>
+            <CardContent className="p-4 flex-1">
+              {(() => {
+                const groupName = TAG_GROUP_TABS.find(t => t.key === activeTagTab)?.groupName ?? '';
+                const entries = tagLeaderboard[groupName] ?? [];
+                const max = entries.length > 0 ? entries[0].gmv : 0;
+                if (entries.length === 0) {
+                  return (
+                    <div className="py-10 text-center text-sm text-muted-foreground">
+                      Chưa có dữ liệu cho nhóm "{groupName}".
+                    </div>
+                  );
+                }
+                return (
+                  <ol className="space-y-3">
+                    {entries.map((e, idx) => {
+                      const pct = max > 0 ? Math.max(2, Math.round((e.gmv / max) * 100)) : 0;
+                      return (
+                        <li key={e.id} className="space-y-1.5">
+                          <div className="flex items-baseline justify-between gap-3">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-xs font-bold text-muted-foreground w-5 shrink-0">#{idx + 1}</span>
+                              <span className="font-bold text-white truncate">{e.name}</span>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <div className="text-sm font-bold text-emerald-400">{formatCurrency(e.gmv)}</div>
+                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{e.videoCount} video clip</div>
+                            </div>
+                          </div>
+                          <div className="h-1.5 w-full rounded-full bg-[#0d1117] overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-emerald-500/70 to-emerald-400"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                );
+              })()}
             </CardContent>
           </Card>
         </div>

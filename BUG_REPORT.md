@@ -1,162 +1,157 @@
-# Báo cáo Lỗi: Số liệu hiển thị không nhất quán trên bảng "TOP NHÂN VIÊN BOOKING"
+# Báo cáo Lỗi: Khung "Xếp hạng Hiệu quả Content" trống rỗng (giao diện tĩnh)
 
 ## Trạng thái
 ĐÃ SỬA — Thành công
 
 ## Kết quả Kiểm thử
 
-### Thay đổi đã áp dụng (Phương án 1)
-1. **Database migration** — `supabase/migrations/create_leaderboard_rpcs.sql` (đã apply lên Supabase):
-   - `get_top_booking_staff_leaderboard(...)` → GROUP BY `assigned_user_id`, `SUM(gmv)`, `COUNT(DISTINCT creator_id)`, LEFT JOIN `profiles` để lấy `display_name`. Áp dụng đủ các filter: period, source_type, product_id, min_gmv, min_views, search, tag_ids, assigned_user_id.
-   - `get_top_kocs_leaderboard(...)` → GROUP BY `creator_id`, cùng bộ filter.
-   - Cả hai đều `ORDER BY total_gmv DESC, <id> ASC` và LIMIT 5.
-2. **Frontend** — `src/app/(main)/team/booking/page.tsx`:
-   - Bỏ state `leaderboardVideos` và lời gọi `fetchVideosWithMetrics({ limit: 5000 })` (lời gọi bị PostgREST cắt cứng ở 1000 dòng).
-   - Bỏ 2 khối `useMemo` (`kocLeaderboard`, `staffLeaderboard`) gom nhóm client-side.
-   - Gọi trực tiếp 2 RPC mới song song trong `fetchData`, map kết quả thành `LeaderboardEntry[]`.
-3. **Script kiểm thử hồi quy**: `scratch/test_booking_leaderboard.mjs`.
+### Điều chỉnh so với kế hoạch ban đầu
+Phương án 1 của report đề xuất gom nhóm client-side trên mảng `leaderboardVideos` (lời gọi `fetchVideosWithMetrics({ limit: 5000 })`).
+Mẫu này chính là root cause của bug "Linh Chi BOOKING" vừa sửa: PostgREST cắt cứng phản hồi ở `max_rows = 1000`. Brand source hiện đã có **1537 videos**, nên tổng GMV/số video cho các tag thấp hơn top-1000 sẽ bị truncate âm thầm.
+Vì vậy đã chuyển sang **server-side aggregation** (cùng pattern với booking leaderboards), thay vì hi sinh tính đúng đắn.
+
+### Thay đổi đã áp dụng
+1. **Database migration** — `supabase/migrations/create_tag_leaderboard_rpc.sql` (đã apply lên Supabase):
+   - `get_top_tags_by_group_leaderboard(...)` với đủ filter (period, source_type, product_id, min_gmv, min_views, search, tag_ids, assigned_user_id) + 2 tham số riêng `p_groups TEXT[]` và `p_limit_per_group INT`.
+   - GROUP BY `(group_name, tag_id, tag_name)`, `SUM(gmv)`, `COUNT(DISTINCT video.id)`. Top-N mỗi group qua `ROW_NUMBER() OVER (PARTITION BY group_name ORDER BY total_gmv DESC, tag_name ASC)`.
+2. **Frontend** — `src/app/(main)/team/content/page.tsx`:
+   - Bổ sung state `tagLeaderboard: Record<group, TagLbEntry[]>` và `activeTagTab`.
+   - Trong `fetchData` chạy song song RPC mới với các call hiện có.
+   - Thay placeholder Card bằng Card động: tiêu đề, 3 tab (Format / Hook / Sound), Top-5 với progress bar (% so với tag đứng đầu trong group), GMV + số video clip.
+3. **Test hồi quy**: `scratch/test_tag_leaderboard.mjs`.
 
 ### Kết quả chạy test
 ```
-All-staff leaderboard:
-  Quỳnh Anh BOOKING: gmv=4000672888, kocs=2321, videos=5898
-  Linh Chi BOOKING: gmv=260634592, kocs=110, videos=285
-  Ngọc Ánh BOOKING: gmv=46375389, kocs=67, videos=269
-  Thuỳ Linh BOOKING: gmv=11887167, kocs=9, videos=28
-Linh Chi solo: gmv=260634592, kocs=110, videos=285
-Cross-checked all top-staff rows against per-staff RPC ✓
-Top KOCs returned: 5 rows
-✅ PASS: Leaderboards consistent across filters (Linh Chi: 260.634.592đ, 110 KOCs).
+RPC returned 15 rows.
+  Content Format: 5 tags, top = Viral Hook (2.451.369.629đ, 67 videos)
+  Hook Style: 5 tags, top = Love (2.799.098.740đ, 172 videos)
+  Sound: 5 tags, top = Nhạc ngoại (1.391.828.329đ, 37 videos)
+Cross-check: tag "Love" → 172 brand video links (RPC said 172)
+✅ PASS: Tag leaderboard RPC returns correct top-N per requested group.
 ```
 
-- **Trước fix:** Linh Chi BOOKING ở "Tất cả nhân viên" hiển thị **256.385.428đ / 19 KOCs** (sai), ở "Linh Chi BOOKING" hiển thị **260.634.592đ / 110 KOCs** (đúng).
-- **Sau fix:** Cả 2 chế độ lọc đều cho **260.634.592đ / 110 KOCs**. Test còn cross-check toàn bộ 4 staff trong leaderboard, mọi cặp số liệu trùng khớp.
-- **Bonus performance:** Frontend không còn tải 1000 dòng video chỉ để gom nhóm 5 dòng — mỗi RPC chỉ trả về đúng 5 dòng gọn nhẹ.
+- **Cross-check:** Số video gắn tag "Love" (Hook Style, brand source) đếm độc lập qua `video_tags` join = **172** — khớp tuyệt đối với RPC.
+- **Đúng đắn ở mọi quy mô:** Aggregation nằm trong SQL nên 1500+ video brand không còn nguy cơ truncate. Card cũng tự thừa hưởng đủ filter của trang (date range, product, min_gmv, search, tag filter).
 - **Kết luận:** **Thành công ✅**
 
+> Lưu ý out-of-scope: trang `/team/content` còn dùng `fetchVideosWithMetrics({ limit: 5000 })` để feed Card "TOP Sản phẩm (Brand)". Brand đã có 1537 video > cap 1000 nên Card đó có nguy cơ thiếu hụt số liệu tương tự bug Linh Chi. Lần này chưa đụng vì user yêu cầu minimal changes — có thể tạo bug report riêng để fix sau theo cùng pattern.
+
 ## Tiêu đề Lỗi
-Số liệu GMV và số lượng KOC của nhân viên trên bảng "TOP NHÂN VIÊN BOOKING" không nhất quán và bị thiếu hụt nghiêm trọng khi lọc "Tất cả nhân viên" so với khi lọc "Chỉ nhân viên đó".
+Khung "Xếp hạng Hiệu quả Content" trên trang Thương hiệu (`/team/content`) chỉ là giao diện tĩnh (placeholder) và chưa hiển thị xếp hạng thực tế theo các nhóm tag.
 
 ## Mô tả Lỗi
-Tại trang **KOC / Affiliate Performance** (`/team/booking`), số liệu của các nhân viên phụ trách booking hiển thị tại bảng **TOP NHÂN VIÊN BOOKING** bị thay đổi không nhất quán tùy thuộc vào bộ lọc "Nhân viên phụ trách" được chọn:
+Tại trang hiệu suất video Thương hiệu (`/team/content`), khung **Xếp hạng Hiệu quả Content** bên cạnh bảng **TOP SẢN PHẨM (BRAND)** hiện tại đang trống rỗng. Khung này chỉ hiển thị một biểu tượng giỏ hàng và đoạn văn bản mô tả tĩnh: *"Phân tích sâu về các kịch bản và format video mang lại chuyển đổi cao nhất."*
 
-- **Khi lọc "Tất cả nhân viên" (mặc định):**
-  - Hệ thống báo *Linh Chi BOOKING* đạt tổng GMV là **256.385.428 đ** và **Phụ trách 19 KOCs**.
-- **Khi lọc đích danh "Linh Chi BOOKING":**
-  - Hệ thống báo *Linh Chi BOOKING* đạt tổng GMV là **260.634.592 đ** và **Phụ trách 110 KOCs**.
-
-Sự chênh lệch này xảy ra do logic Frontend tải danh sách chi tiết các clips qua RPC `get_videos_with_period_metrics` để tính toán (nhóm và cộng dồn) bảng xếp hạng trực tiếp trên Client. Do API PostgREST của Supabase giới hạn cứng tối đa 1000 dòng phản hồi trên mỗi request (`max_rows = 1000`), client chỉ nhận được tối đa 1000 video clips có GMV cao nhất trên toàn cục khi lọc "Tất cả nhân viên". Toàn bộ các clips hiệu suất thấp hơn của cô ấy (nằm ngoài top 1000 toàn cục) bị cắt xén hoàn toàn, làm thiếu hụt nghiêm trọng cả doanh thu tổng lẫn số KOC thực tế.
+Người dùng mong muốn khung này trở thành một bảng xếp hạng động (Leaderboard) thực tế, giúp phân tích hiệu quả hoạt động của các kịch bản video (đo bằng tổng GMV và số lượng video clip) được phân loại và lọc theo 3 nhóm tag chính có trong cơ sở dữ liệu:
+1. **Content Format** (Định dạng nội dung: Unboxing, Mix&Match, Couple,...)
+2. **Hook Style** (Kiểu hook mở đầu: Love, Healing, Visual Hook,...)
+3. **Sound** (Âm thanh/Nhạc nền: Lồng tiếng, Nhạc Việt, Podcast,...)
 
 ## Các bước tái hiện
-1. Đăng nhập hệ thống và đi tới trang **KOC / Affiliate** (`/team/booking`).
-2. Giữ nguyên bộ lọc **Nhân viên phụ trách** ở trạng thái mặc định **Tất cả nhân viên**.
-3. Quan sát và ghi lại số liệu của *Linh Chi BOOKING* tại bảng xếp hạng **TOP NHÂN VIÊN BOOKING** (Ví dụ: `256.385.428 đ`, `Phụ trách 19 KOCs`).
-4. Mở **Bộ lọc nâng cao**, tại trường **Nhân viên phụ trách**, chọn **Linh Chi BOOKING**.
-5. Quan sát lại số liệu hiển thị tại bảng xếp hạng: Số liệu lúc này tăng lên **260.634.592 đ** và **Phụ trách 110 KOCs**.
+1. Đăng nhập hệ thống và truy cập vào trang **Thương hiệu (DECOCO Official)** (`/team/content`).
+2. Quan sát khung bên cạnh mục **TOP SẢN PHẨM (BRAND)** ở giữa trang.
+3. Nhận thấy khung **Xếp hạng Hiệu quả Content** hoàn toàn tĩnh và không hiển thị bất kỳ bảng xếp hạng hay dữ liệu tương tác nào.
 
 ## Kết quả Thực tế vs Kết quả Mong đợi
-- **Kết quả Thực tế:** Số liệu tổng GMV và số lượng KOC phụ trách bị sai lệch, thiếu hụt lớn khi xem ở chế độ "Tất cả nhân viên" so với chế độ xem riêng.
-- **Kết quả Mong đợi:** Số liệu của từng nhân viên tại bảng xếp hạng phải hoàn toàn chính xác, nhất quán và đầy đủ ở mọi chế độ lọc.
+- **Kết quả Thực tế:** Khung hiển thị giao diện tĩnh (placeholder) trống rỗng với biểu tượng giỏ hàng, không có dữ liệu thực tế hay nút tương tác.
+- **Kết quả Mong đợi:** Hiển thị một bảng xếp hạng động (Leaderboard) gồm Top 5 tag đạt GMV cao nhất, đi kèm bộ nút tab chuyển đổi linh hoạt giữa 3 nhóm tag: **Format** (Content Format), **Hook** (Hook Style), và **Sound** (Sound). Mỗi tag hiển thị:
+  - Tên Tag (Ví dụ: *Unboxing*, *Nhạc Việt*)
+  - Tổng GMV thu được từ các video gắn tag này trong kỳ.
+  - Số lượng video clips tương ứng được gắn tag (Ví dụ: *108 video clip*).
+  - Thanh tiến trình trực quan biểu thị phần trăm đóng góp GMV của tag so với tag đứng đầu.
 
 ## Ngữ cảnh & Môi trường
-- **Trang bị ảnh hưởng:** `/team/booking` (KOC / Affiliate)
-- **Tệp tin liên quan:** `src/app/(main)/team/booking/page.tsx`
-- **Thành phần ảnh hưởng:** State `leaderboardVideos` và `staffLeaderboard` ( logic gom nhóm client-side).
-- **Hàm database liên quan:** RPC `get_videos_with_period_metrics` (`supabase/migrations/add_assigned_user_filter_to_rpcs.sql`).
+- **Trang bị ảnh hưởng:** `/team/content` (Thương hiệu/Brand)
+- **Tệp tin liên quan:** `src/app/(main)/team/content/page.tsx`
+- **Cơ sở dữ liệu:** Các bảng `tag_groups`, `tags`, `video_tags` và `videos`.
 
 ---
 
 ## Phân tích Nguyên nhân Gốc rễ (Root Cause Analysis)
 
-Supabase API (PostgREST) áp dụng giới hạn cứng `max_rows = 1000` trên mỗi HTTP request để bảo vệ hiệu năng hệ thống. 
-
-Trong tệp `src/app/(main)/team/booking/page.tsx`, khi tải dữ liệu cho bảng xếp hạng, frontend thực hiện yêu cầu:
+Tệp tin `src/app/(main)/team/content/page.tsx` hiện tại chứa một component Card cứng (placeholder) từ dòng 199 - 207:
 ```typescript
-fetchVideosWithMetrics({ ...baseParams, limit: 5000, offset: 0 })
+<Card className="border-[#30363d] bg-[#161b22] overflow-hidden">
+  <CardContent className="flex flex-col items-center justify-center p-12 text-center h-full gap-4">
+    <ShoppingBag className="w-12 h-12 text-primary/40" />
+    <div>
+      <p className="font-bold text-white">Xếp hạng Hiệu quả Content</p>
+      <p className="text-xs text-muted-foreground mt-1">Phân tích sâu về các kịch bản và format video mang lại chuyển đổi cao nhất.</p>
+    </div>
+  </CardContent>
+</Card>
 ```
-Mặc dù frontend yêu cầu `limit: 5000`, API của Supabase vẫn chỉ trả về tối đa **1000 dòng**.
+Hệ thống chưa xây dựng logic:
+1. Tải danh mục thẻ tag và các nhóm liên kết (`tags` và `tag_groups`) từ Supabase về client.
+2. Duyệt qua mảng video clips đã được lọc (`leaderboardVideos`) để tích lũy doanh thu GMV và đếm số lượng video tương ứng cho từng thẻ tag.
+3. Gom nhóm kết quả phân tích theo 3 nhóm tag: **Content Format**, **Hook Style**, **Sound**.
+4. Giao diện Tabs và thanh tiến trình động để người dùng chuyển đổi và theo dõi.
 
-### So sánh cơ chế hoạt động của 2 trường hợp lọc:
-
-#### 1. Khi chọn bộ lọc "Tất cả nhân viên"
-- `p_assigned_user_id` gửi lên database là `NULL`.
-- Server trả về **1000 clips có GMV cao nhất trên toàn hệ thống** (trong tổng số hơn 7,200 clips).
-- Client nhận 1000 dòng này và chạy hàm `useMemo` để tính toán:
-  - Bất kỳ video nào của KOC được phân cho *Linh Chi BOOKING* mà **không nằm trong Top 1000 video toàn cục** (vì có GMV thấp hơn) sẽ bị loại bỏ hoàn toàn khỏi phép tính.
-  - Kết quả: Tổng GMV bị hụt (chỉ tính các video lọt top) và số KOC phụ trách bị giảm mạnh xuống còn **19 KOC** (chỉ đếm các KOC có video lọt top 1000 toàn cục).
-
-#### 2. Khi lọc đích danh "Linh Chi BOOKING"
-- `p_assigned_user_id` gửi lên database là ID của Linh Chi (`66d67932-4152-4fd8-ad5b-0c278622a10e`).
-- Server thực hiện lọc trực tiếp dưới SQL, chỉ quét và trả về các video thuộc về Linh Chi.
-- Vì tổng số video Linh Chi phụ trách trong DB là **285 clips** (nhỏ hơn giới hạn 1000), PostgREST trả về đầy đủ cả 285 dòng mà không bị cắt xén.
-- Client nhận đủ 285 dòng và tính toán chính xác tuyệt đối: **260.634.592 đ** và **110 KOCs**.
-
-### Sơ đồ luồng dữ liệu (Data Flow Diagram)
+### Sơ đồ luồng xử lý và dữ liệu đề xuất (Proposed Data Flow)
 
 ```ascii
-Trường hợp 1: Lọc "Tất cả nhân viên"
- [Cơ sở dữ liệu] (7,287 clips)
+ [leaderboardVideos] (Danh sách video đã được lọc theo ngày/sản phẩm)
        │
-       ▼ Gọi RPC get_videos_with_period_metrics (limit: 5000, p_assigned_user_id = NULL)
- [Supabase API / PostgREST]
-  - Phát hiện truy vấn lớn hơn max_rows
-  - Áp dụng cấu hình mặc định: max_rows = 1000
-       │
-       ▼ Trả về 1000 clips có GMV lớn nhất hệ thống
- [Frontend Client]
-  - Thực hiện gom nhóm `staffMap` trực tiếp từ mảng 1000 dòng này
-       │
-       ▼
- [Linh Chi BOOKING] hiển thị: 256.385.428đ & 19 KOCs (Bị mất clips ngoài Top 1000)
-
-
-Trường hợp 2: Lọc riêng "Linh Chi BOOKING"
- [Cơ sở dữ liệu] (7,287 clips)
-       │
-       ▼ Gọi RPC (limit: 5000, p_assigned_user_id = '<Linh Chi ID>')
- [Supabase API / PostgREST]
-  - Lọc SQL dưới DB chỉ lấy clips của Linh Chi (tổng cộng 285 dòng)
-  - Vì 285 < max_rows 1000, trả về đầy đủ 285 dòng
-       │
-       ▼ Trả về toàn bộ 285 clips của Linh Chi
- [Frontend Client]
-  - Gom nhóm `staffMap` từ 285 dòng đầy đủ này
-       │
-       ▼
- [Linh Chi BOOKING] hiển thị: 260.634.592đ & 110 KOCs (Chính xác tuyệt đối)
+       ├─────────────────────────────────────────┐
+       ▼                                         ▼
+ [Tải danh mục Tags từ DB] (tags + tag_groups)  [Gom nhóm & Tích lũy]
+  - Map: Tag Name (lowercase) -> Group Name      - Duyệt qua từng clip
+                                                 - Với mỗi tag trong clip:
+                                                    - Tra cứu Group từ Map
+                                                    - Cộng dồn GMV & Tăng count
+                                                     cho tag thuộc Group đó
+                                                 │
+                                                 ▼ Sắp xếp GMV giảm dần & lấy Top 5
+                                         [Bộ Leaderboards theo Group]
+                                                 │
+                                                 ▼ Render UI theo activeTab
+ ┌────────────────────────────────────────────────────────────────────────┐
+ │   XẾP HẠNG HIỆU QUẢ CONTENT                                            │
+ │   [ Format (Active) ]   [ Hook ]   [ Sound ]                           │
+ ├────────────────────────────────────────────────────────────────────────┤
+ │ 🥇 Unboxing                 1.603.301.032 đ   (108 video clip)         │
+ │ 🥈 Mix&Match                  533.456.216 đ   (42 video clip)          │
+ │ 🥉 Couple                     214.770.440 đ   (10 video clip)          │
+ └────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Đề xuất Sửa lỗi (Proposed Fixes)
 
-### Phương án 1: Tạo các hàm RPC chuyên dụng phía Server (Server-side Aggregation) - *Khuyến nghị tối ưu*
-Thay vì tải toàn bộ chi tiết video về client để tính toán thủ công (rất tốn băng thông và dễ lỗi do giới hạn dòng), chúng ta sẽ tạo các hàm RPC gom nhóm trực tiếp dưới PostgreSQL:
-1. **Tạo RPC `get_top_booking_staff_leaderboard`:**
-   - Thực hiện gom nhóm `GROUP BY assigned_user_id` từ bảng `videos` (LEFT JOIN với `video_period_metrics`).
-   - Tính tổng GMV (`COALESCE(SUM(gmv), 0)`) và đếm số KOC duy nhất (`COUNT(DISTINCT creator_id)`).
-   - Áp dụng đầy đủ các bộ lọc ngày tháng, sản phẩm, tag.
-   - Sắp xếp theo GMV giảm dần và giới hạn trả về tối đa 5 dòng.
-2. **Tạo RPC `get_top_kocs_leaderboard`:**
-   - Thực hiện gom nhóm `GROUP BY creator_id` để lấy danh sách TOP KOCs.
-3. **Frontend:**
-   - Gọi trực tiếp 2 hàm RPC này để lấy dữ liệu xếp hạng hiển thị.
-- **Ưu điểm:**
-  - Chính xác 100%, nhất quán ở mọi chế độ lọc.
-  - Cực kỳ tối ưu hiệu năng: Thay vì trình duyệt phải tải và xử lý mảng JSON 1,000 dòng, nay nó chỉ cần tải về đúng 5 dòng dữ liệu xếp hạng gọn nhẹ.
-- **Nhược điểm:** Cần viết thêm SQL migrations để tạo 2 hàm RPC mới trong database.
+### Phương án 1: Tính toán gom nhóm trực tiếp tại Frontend (Client-side Aggregation) - *Khuyến nghị*
 
-### Phương án 2: Tải tích lũy clips bằng Batching ở Frontend (Client-side Accumulation)
-Tương tự như cách sửa lỗi KOC Mapping, ta viết vòng lặp tải toàn bộ video clips trong kỳ về frontend theo từng đợt `.range()` trước khi chạy hàm `useMemo` gom nhóm.
-- **Ưu điểm:** Chỉ sửa code frontend, không cần can thiệp database.
-- **Nhược điểm:** Hiệu năng cực kỳ kém. Khi database có hàng chục nghìn video, việc bắt trình duyệt tải toàn bộ video về chỉ để làm một bảng xếp hạng 5 dòng sẽ gây đơ và lag trang web cực kỳ nghiêm trọng. Không khuyến nghị sử dụng phương án này.
+Tận dụng mảng dữ liệu `leaderboardVideos` sẵn có của trang (mảng này đã được lọc chính xác theo khoảng thời gian và sản phẩm được chọn trên thanh bộ lọc):
+1. **Frontend (`fetchData`):**
+   - Tải thêm danh sách tag kèm nhóm tag tương ứng từ database:
+     ```typescript
+     const [summaryResult, leaderboardResult, tableResult, usersResult, tagsResult] = await Promise.all([
+       fetchVideosSummary(baseParams),
+       fetchVideosWithMetrics({ ...baseParams, limit: 5000, offset: 0 }),
+       fetchVideosWithMetrics({ ...baseParams, limit: pageSize, offset: (page - 1) * pageSize }),
+       supabase.from('profiles').select('*').eq('is_active', true),
+       supabase.from('tags').select('name, tag_groups(name)'), // Tải tag-group mapping
+     ]);
+     ```
+   - Lưu trữ danh mục này vào một state `tags` của page.
+2. **Frontend (Logic Gom nhóm):**
+   - Xây dựng hàm `useMemo` có tên `contentLeaderboards` để tính toán số liệu thống kê (GMV, số video) cho từng tag và phân loại chúng vào 3 nhóm tag đích.
+   - Sắp xếp thứ tự các tag trong mỗi nhóm theo tổng GMV giảm dần và cắt lấy Top 5.
+3. **Frontend (UI Card):**
+   - Thay thế thẻ Card tĩnh hiện tại bằng một Card động có tiêu đề, bộ chọn Tab chứa 3 nhóm: **Format** (Content Format), **Hook** (Hook Style), và **Sound** (Sound).
+   - Duyệt qua Top 5 tag của nhóm đang hoạt động và hiển thị dưới dạng các dòng có thanh tiến trình (progress bar) trực quan và đẹp mắt.
+
+- **Ưu điểm:**
+  - Cực kỳ đơn giản, trực quan, không cần tạo thêm RPC mới hay chỉnh sửa cấu trúc database.
+  - Tự động thừa hưởng toàn bộ các bộ lọc thời gian, sản phẩm của trang một cách hoàn hảo nhờ dùng chung dữ liệu `leaderboardVideos` đã được lọc.
+  - Hiệu năng rất cao vì tính toán trực tiếp trên RAM phía Client.
 
 ---
 
 ## Kế hoạch Xác minh
 
-1. **Xác minh số liệu khớp nhau:**
-   - Sau khi áp dụng sửa đổi, kiểm tra bảng xếp hạng **TOP NHÂN VIÊN BOOKING** ở chế độ lọc "Tất cả nhân viên". 
-   - Số liệu của *Linh Chi BOOKING* phải hiển thị chính xác là `260.634.592 đ` và `Phụ trách 110 KOCs` (hoặc khớp hoàn toàn với số liệu khi lọc riêng cô ấy).
-2. **Đối chiếu chéo:**
-   - Thực hiện kiểm tra tương tự với các nhân viên khác như *Quỳnh Anh BOOKING*, *Ngọc Ánh BOOKING*,... Đảm bảo số liệu hiển thị đồng nhất ở cả 2 chế độ lọc.
+1. **Xác minh hiển thị:**
+   - Sau khi áp dụng sửa đổi, kiểm tra xem Card **Xếp hạng Hiệu quả Content** có hiển thị các tab: **Format**, **Hook**, **Sound** hay không.
+   - Click chuyển đổi qua lại giữa các tab để đảm bảo giao diện thay đổi mượt mà và hiển thị đúng các tag thuộc nhóm tương ứng (ví dụ: tab *Sound* phải hiển thị *Lồng tiếng*, *Nhạc Việt*,...).
+2. **Xác minh tính chính xác của số liệu:**
+   - So sánh chéo tổng GMV của một tag (ví dụ: *Unboxing*) trên bảng xếp hạng với kết quả khi lọc tìm kiếm thủ công tag đó trong bảng chi tiết video. Số liệu GMV và số video clip phải hoàn toàn trùng khớp.
