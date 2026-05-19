@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { TrendingUp, TrendingDown, Tv, FileDown, Loader2, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -48,9 +48,7 @@ const TAG_GROUP_TABS: ReadonlyArray<{ key: 'Format' | 'Hook' | 'Sound'; label: s
 export default function ContentTeamPage() {
   const { user } = useUser();
   const [summary, setSummary] = useState<VideosSummary>(EMPTY_SUMMARY);
-  // leaderboardVideos still uses the limited RPC payload — top-N by GMV is
-  // unaffected because the RPC already orders gmv DESC server-side.
-  const [leaderboardVideos, setLeaderboardVideos] = useState<VideoWithMetrics[]>([]);
+  const [productLeaderboard, setProductLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [paginatedVideos, setPaginatedVideos] = useState<VideoWithMetrics[]>([]);
   const [tagLeaderboard, setTagLeaderboard] = useState<Record<string, TagLbEntry[]>>({});
   const [activeTagTab, setActiveTagTab] = useState<'Format' | 'Hook' | 'Sound'>('Format');
@@ -84,7 +82,7 @@ export default function ContentTeamPage() {
         tagIds: filters.tagIds,
       };
 
-      const tagRpcArgs = {
+      const rpcFilters = {
         p_period_start: periodStart ?? null,
         p_period_end: periodEnd ?? null,
         p_source_type: 'brand',
@@ -93,24 +91,25 @@ export default function ContentTeamPage() {
         p_min_views: filters.minViews ? parseInt(filters.minViews) : null,
         p_search: filters.search || null,
         p_tag_ids: filters.tagIds && filters.tagIds.length > 0 ? filters.tagIds : null,
-        p_groups: TAG_GROUP_TABS.map(t => t.groupName),
-        p_limit_per_group: 5,
       };
 
-      const [summaryResult, leaderboardResult, tableResult, usersResult, tagLbResult] = await Promise.all([
+      const [summaryResult, tableResult, usersResult, tagLbResult, productLbResult] = await Promise.all([
         fetchVideosSummary(baseParams),
-        fetchVideosWithMetrics({ ...baseParams, limit: 5000, offset: 0 }),
         fetchVideosWithMetrics({
           ...baseParams,
           limit: pageSize,
           offset: (page - 1) * pageSize,
         }),
         supabase.from('profiles').select('*').eq('is_active', true),
-        supabase.rpc('get_top_tags_by_group_leaderboard', tagRpcArgs),
+        supabase.rpc('get_top_tags_by_group_leaderboard', {
+          ...rpcFilters,
+          p_groups: TAG_GROUP_TABS.map(t => t.groupName),
+          p_limit_per_group: 5,
+        }),
+        supabase.rpc('get_top_products_leaderboard', { ...rpcFilters, p_limit: 5 }),
       ]);
 
       setSummary(summaryResult);
-      setLeaderboardVideos(leaderboardResult.data);
       setPaginatedVideos(tableResult.data);
       setTotalCount(tableResult.totalCount);
 
@@ -129,6 +128,16 @@ export default function ContentTeamPage() {
         });
       }
       setTagLeaderboard(grouped);
+
+      if (productLbResult.error) throw productLbResult.error;
+      setProductLeaderboard(
+        ((productLbResult.data ?? []) as Array<{ product_name: string; total_gmv: number | string; video_count: number | string }>).map(r => ({
+          id: r.product_name,
+          name: r.product_name,
+          value: Number(r.total_gmv) || 0,
+          subtitle: `${Number(r.video_count) || 0} video gắn link`,
+        }))
+      );
     } catch (error) {
       console.error('Lỗi khi tải dữ liệu Thương hiệu:', error);
     } finally {
@@ -139,30 +148,6 @@ export default function ContentTeamPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-
-  const productLeaderboard = useMemo(() => {
-    const prodMap = new Map<string, { name: string; gmv: number; videos: number }>();
-
-    leaderboardVideos.forEach(v => {
-      const name = v.product_name || 'Khác/Chưa rõ';
-      const current = prodMap.get(name) || { name, gmv: 0, videos: 0 };
-      prodMap.set(name, {
-        name,
-        gmv: current.gmv + (v.gmv || 0),
-        videos: current.videos + 1,
-      });
-    });
-
-    return Array.from(prodMap.entries())
-      .map(([name, stats]) => ({
-        id: name,
-        name: stats.name,
-        value: stats.gmv,
-        subtitle: `${stats.videos} video gắn link`,
-      } as LeaderboardEntry))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
-  }, [leaderboardVideos]);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
   const formatNumber = (val: number) => new Intl.NumberFormat('vi-VN').format(val);
