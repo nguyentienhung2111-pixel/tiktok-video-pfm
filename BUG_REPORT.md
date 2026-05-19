@@ -1,139 +1,162 @@
-# Báo cáo Lỗi: Giới hạn danh sách KOC ở con số 1000
+# Báo cáo Lỗi: Số liệu hiển thị không nhất quán trên bảng "TOP NHÂN VIÊN BOOKING"
 
 ## Trạng thái
 ĐÃ SỬA — Thành công
 
 ## Kết quả Kiểm thử
 
-### Điều chỉnh nhỏ so với kế hoạch ban đầu
-Khi triển khai Phương án 2 (client-side batching), test hồi quy ban đầu phát hiện một vấn đề tinh tế:
-- Lần chạy đầu trả về `2721 rows` nhưng chỉ `2464 unique creator_ids` → có duplicate giữa các trang.
-- Nguyên nhân: RPC `get_koc_mappings_summary` chỉ `ORDER BY total_gmv DESC`. Rất nhiều KOC có `total_gmv = 0` (chia sẻ giá trị key sort), nên thứ tự giữa các lần PostgREST gọi `.range()` không ổn định → dòng nằm gần ranh giới phân trang bị xáo trộn.
-
-Vì vậy Phương án 2 đã được áp dụng kèm **một sửa lỗi tối thiểu** ở RPC để pagination chạy đúng:
-
-### Thay đổi đã áp dụng
-1. **Database migration** — `supabase/migrations/koc_mappings_summary_deterministic_order.sql`:
-   - Thêm tiebreaker `, creator_id ASC` vào `ORDER BY` để pagination ổn định.
-2. **Frontend** — `src/app/(main)/admin/koc-mapping/page.tsx`:
-   - Vòng lặp `.range(from, from + PAGE_SIZE - 1)` (PAGE_SIZE = 1000) tải toàn bộ KOC.
-   - Dùng `Map<creator_id, row>` để dedup phía client làm lớp phòng vệ.
-3. **Script kiểm thử hồi quy**: `scratch/test_koc_mapping_full_count.mjs`.
+### Thay đổi đã áp dụng (Phương án 1)
+1. **Database migration** — `supabase/migrations/create_leaderboard_rpcs.sql` (đã apply lên Supabase):
+   - `get_top_booking_staff_leaderboard(...)` → GROUP BY `assigned_user_id`, `SUM(gmv)`, `COUNT(DISTINCT creator_id)`, LEFT JOIN `profiles` để lấy `display_name`. Áp dụng đủ các filter: period, source_type, product_id, min_gmv, min_views, search, tag_ids, assigned_user_id.
+   - `get_top_kocs_leaderboard(...)` → GROUP BY `creator_id`, cùng bộ filter.
+   - Cả hai đều `ORDER BY total_gmv DESC, <id> ASC` và LIMIT 5.
+2. **Frontend** — `src/app/(main)/team/booking/page.tsx`:
+   - Bỏ state `leaderboardVideos` và lời gọi `fetchVideosWithMetrics({ limit: 5000 })` (lời gọi bị PostgREST cắt cứng ở 1000 dòng).
+   - Bỏ 2 khối `useMemo` (`kocLeaderboard`, `staffLeaderboard`) gom nhóm client-side.
+   - Gọi trực tiếp 2 RPC mới song song trong `fetchData`, map kết quả thành `LeaderboardEntry[]`.
+3. **Script kiểm thử hồi quy**: `scratch/test_booking_leaderboard.mjs`.
 
 ### Kết quả chạy test
 ```
-Single .rpc() call returned: 1000 rows (capped by PostgREST)
-Batched .range() loop returned: 2721 rows total
-KOC 7599647465428173844: visible after fix=true, visible before fix=true
-✅ PASS: All 2721 KOCs now reachable from the client (was capped at 1000).
+All-staff leaderboard:
+  Quỳnh Anh BOOKING: gmv=4000672888, kocs=2321, videos=5898
+  Linh Chi BOOKING: gmv=260634592, kocs=110, videos=285
+  Ngọc Ánh BOOKING: gmv=46375389, kocs=67, videos=269
+  Thuỳ Linh BOOKING: gmv=11887167, kocs=9, videos=28
+Linh Chi solo: gmv=260634592, kocs=110, videos=285
+Cross-checked all top-staff rows against per-staff RPC ✓
+Top KOCs returned: 5 rows
+✅ PASS: Leaderboards consistent across filters (Linh Chi: 260.634.592đ, 110 KOCs).
 ```
 
-- **Trước fix:** Chỉ truy cập được 1000 KOC.
-- **Sau fix:** Truy cập đủ **2721 KOC** duy nhất, không trùng lặp, ô tìm kiếm client-side hoạt động trên toàn bộ danh sách.
+- **Trước fix:** Linh Chi BOOKING ở "Tất cả nhân viên" hiển thị **256.385.428đ / 19 KOCs** (sai), ở "Linh Chi BOOKING" hiển thị **260.634.592đ / 110 KOCs** (đúng).
+- **Sau fix:** Cả 2 chế độ lọc đều cho **260.634.592đ / 110 KOCs**. Test còn cross-check toàn bộ 4 staff trong leaderboard, mọi cặp số liệu trùng khớp.
+- **Bonus performance:** Frontend không còn tải 1000 dòng video chỉ để gom nhóm 5 dòng — mỗi RPC chỉ trả về đúng 5 dòng gọn nhẹ.
 - **Kết luận:** **Thành công ✅**
 
 ## Tiêu đề Lỗi
-Danh sách KOC trên trang Quản lý Booking KOC (`/admin/koc-mapping`) bị giới hạn cứng ở con số 1000 dòng, ẩn đi 1,720 KOC khác trong cơ sở dữ liệu.
+Số liệu GMV và số lượng KOC của nhân viên trên bảng "TOP NHÂN VIÊN BOOKING" không nhất quán và bị thiếu hụt nghiêm trọng khi lọc "Tất cả nhân viên" so với khi lọc "Chỉ nhân viên đó".
 
 ## Mô tả Lỗi
-Giao diện `/admin/koc-mapping` (Quản lý Booking KOC) hiển thị tiêu đề **"Danh sách KOC & Phân bổ nhân viên (1000)"**. 
+Tại trang **KOC / Affiliate Performance** (`/team/booking`), số liệu của các nhân viên phụ trách booking hiển thị tại bảng **TOP NHÂN VIÊN BOOKING** bị thay đổi không nhất quán tùy thuộc vào bộ lọc "Nhân viên phụ trách" được chọn:
 
-Qua kiểm tra trực tiếp cơ sở dữ liệu, hiện tại hệ thống đang lưu trữ **2,720 KOC duy nhất** (tương ứng với 7,287 clips có `source_type = 'koc'`). 
+- **Khi lọc "Tất cả nhân viên" (mặc định):**
+  - Hệ thống báo *Linh Chi BOOKING* đạt tổng GMV là **256.385.428 đ** và **Phụ trách 19 KOCs**.
+- **Khi lọc đích danh "Linh Chi BOOKING":**
+  - Hệ thống báo *Linh Chi BOOKING* đạt tổng GMV là **260.634.592 đ** và **Phụ trách 110 KOCs**.
 
-Tuy nhiên, do hàm RPC `get_koc_mappings_summary` được gọi qua Supabase client mà không có phân trang (pagination) hay batching, kết quả trả về bị giới hạn cứng bởi cấu hình mặc định `max_rows = 1000` của PostgREST (Supabase). Do đó:
-- Chỉ có **1,000 KOC có GMV cao nhất** được trả về client và hiển thị.
-- **1,720 KOC còn lại bị ẩn hoàn toàn** khỏi giao diện.
-- Người dùng **không thể tìm kiếm** những KOC bị ẩn này qua ô tìm kiếm (do ô tìm kiếm chỉ lọc client-side trên danh sách 1,000 dòng đã load).
-- Người dùng **không thể phân bổ nhân viên phụ trách** cho 1,720 KOC này.
+Sự chênh lệch này xảy ra do logic Frontend tải danh sách chi tiết các clips qua RPC `get_videos_with_period_metrics` để tính toán (nhóm và cộng dồn) bảng xếp hạng trực tiếp trên Client. Do API PostgREST của Supabase giới hạn cứng tối đa 1000 dòng phản hồi trên mỗi request (`max_rows = 1000`), client chỉ nhận được tối đa 1000 video clips có GMV cao nhất trên toàn cục khi lọc "Tất cả nhân viên". Toàn bộ các clips hiệu suất thấp hơn của cô ấy (nằm ngoài top 1000 toàn cục) bị cắt xén hoàn toàn, làm thiếu hụt nghiêm trọng cả doanh thu tổng lẫn số KOC thực tế.
 
 ## Các bước tái hiện
-1. Đăng nhập tài khoản Admin DECOCO.
-2. Truy cập vào menu **Quản trị** -> **Booking KOC** (`/admin/koc-mapping`).
-3. Quan sát tiêu đề của bảng: **"Danh sách KOC & Phân bổ nhân viên (1000)"**. Số lượng dòng hiển thị tối đa luôn dừng ở con số 1000.
-4. Thử tìm kiếm một KOC có GMV thấp hoặc KOC mới upload (ví dụ: `chumdayy` - ID `7599647465428173844`), hệ thống sẽ thông báo: *"Không tìm thấy dữ liệu KOC. Vui lòng upload file từ TikTok Shop."* mặc dù KOC này thực tế tồn tại trong cơ sở dữ liệu.
+1. Đăng nhập hệ thống và đi tới trang **KOC / Affiliate** (`/team/booking`).
+2. Giữ nguyên bộ lọc **Nhân viên phụ trách** ở trạng thái mặc định **Tất cả nhân viên**.
+3. Quan sát và ghi lại số liệu của *Linh Chi BOOKING* tại bảng xếp hạng **TOP NHÂN VIÊN BOOKING** (Ví dụ: `256.385.428 đ`, `Phụ trách 19 KOCs`).
+4. Mở **Bộ lọc nâng cao**, tại trường **Nhân viên phụ trách**, chọn **Linh Chi BOOKING**.
+5. Quan sát lại số liệu hiển thị tại bảng xếp hạng: Số liệu lúc này tăng lên **260.634.592 đ** và **Phụ trách 110 KOCs**.
 
 ## Kết quả Thực tế vs Kết quả Mong đợi
-- **Kết quả Thực tế:** Chỉ hiển thị và cho phép thao tác với 1,000 KOC đầu tiên (theo thứ tự GMV giảm dần). 1,720 KOC khác bị cắt xén hoàn toàn và không thể phân bổ nhân viên.
-- **Kết quả Mong đợi:** Giao diện cho phép hiển thị, tìm kiếm và phân bổ nhân viên cho toàn bộ **2,720 KOC** đang có trong cơ sở dữ liệu.
+- **Kết quả Thực tế:** Số liệu tổng GMV và số lượng KOC phụ trách bị sai lệch, thiếu hụt lớn khi xem ở chế độ "Tất cả nhân viên" so với chế độ xem riêng.
+- **Kết quả Mong đợi:** Số liệu của từng nhân viên tại bảng xếp hạng phải hoàn toàn chính xác, nhất quán và đầy đủ ở mọi chế độ lọc.
 
 ## Ngữ cảnh & Môi trường
-- **Trang bị ảnh hưởng:** `/admin/koc-mapping`
-- **Tệp tin Frontend liên quan:** `src/app/(main)/admin/koc-mapping/page.tsx`
-- **Tệp tin Database liên quan:** RPC `get_koc_mappings_summary` (`supabase/migrations/create_get_koc_mappings_summary.sql`)
-- **Nguyên nhân kỹ thuật:** Giới hạn phản hồi mặc định `max_rows = 1000` tại tầng PostgREST của Supabase.
+- **Trang bị ảnh hưởng:** `/team/booking` (KOC / Affiliate)
+- **Tệp tin liên quan:** `src/app/(main)/team/booking/page.tsx`
+- **Thành phần ảnh hưởng:** State `leaderboardVideos` và `staffLeaderboard` ( logic gom nhóm client-side).
+- **Hàm database liên quan:** RPC `get_videos_with_period_metrics` (`supabase/migrations/add_assigned_user_filter_to_rpcs.sql`).
 
 ---
 
 ## Phân tích Nguyên nhân Gốc rễ (Root Cause Analysis)
 
-PostgREST (động cơ API của Supabase) áp dụng cấu hình giới hạn cứng số dòng trả về tối đa trong mỗi HTTP request (mặc định là `max_rows = 1000`) nhằm tránh việc quá tải bộ nhớ và sập database khi thực hiện các truy vấn SELECT lớn.
+Supabase API (PostgREST) áp dụng giới hạn cứng `max_rows = 1000` trên mỗi HTTP request để bảo vệ hiệu năng hệ thống. 
 
-Khi frontend gọi RPC để lấy danh sách KOC:
+Trong tệp `src/app/(main)/team/booking/page.tsx`, khi tải dữ liệu cho bảng xếp hạng, frontend thực hiện yêu cầu:
 ```typescript
-const { data: rows, error: vError } = await supabase.rpc('get_koc_mappings_summary');
+fetchVideosWithMetrics({ ...baseParams, limit: 5000, offset: 0 })
 ```
-Yêu cầu HTTP này không gửi kèm bất kỳ giới hạn phân trang nào. PostgREST nhận yêu cầu, thực thi hàm và tự động áp dụng `LIMIT 1000` trước khi gửi phản hồi JSON về cho trình duyệt.
+Mặc dù frontend yêu cầu `limit: 5000`, API của Supabase vẫn chỉ trả về tối đa **1000 dòng**.
 
-Vì thanh tìm kiếm hoạt động trực tiếp trên mảng dữ liệu đã tải:
-```typescript
-const filteredMappings = mappings.filter(m => 
-  m.creatorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-  m.creatorId.toLowerCase().includes(searchTerm.toLowerCase())
-);
-```
-Nên bất kỳ KOC nào nằm ngoài nhóm 1,000 KOC có GMV cao nhất sẽ không bao giờ được tải lên client, dẫn đến việc tìm kiếm các KOC này hoàn toàn thất bại.
+### So sánh cơ chế hoạt động của 2 trường hợp lọc:
 
-### Biểu đồ luồng dữ liệu (Data Flow Diagram)
+#### 1. Khi chọn bộ lọc "Tất cả nhân viên"
+- `p_assigned_user_id` gửi lên database là `NULL`.
+- Server trả về **1000 clips có GMV cao nhất trên toàn hệ thống** (trong tổng số hơn 7,200 clips).
+- Client nhận 1000 dòng này và chạy hàm `useMemo` để tính toán:
+  - Bất kỳ video nào của KOC được phân cho *Linh Chi BOOKING* mà **không nằm trong Top 1000 video toàn cục** (vì có GMV thấp hơn) sẽ bị loại bỏ hoàn toàn khỏi phép tính.
+  - Kết quả: Tổng GMV bị hụt (chỉ tính các video lọt top) và số KOC phụ trách bị giảm mạnh xuống còn **19 KOC** (chỉ đếm các KOC có video lọt top 1000 toàn cục).
+
+#### 2. Khi lọc đích danh "Linh Chi BOOKING"
+- `p_assigned_user_id` gửi lên database là ID của Linh Chi (`66d67932-4152-4fd8-ad5b-0c278622a10e`).
+- Server thực hiện lọc trực tiếp dưới SQL, chỉ quét và trả về các video thuộc về Linh Chi.
+- Vì tổng số video Linh Chi phụ trách trong DB là **285 clips** (nhỏ hơn giới hạn 1000), PostgREST trả về đầy đủ cả 285 dòng mà không bị cắt xén.
+- Client nhận đủ 285 dòng và tính toán chính xác tuyệt đối: **260.634.592 đ** và **110 KOCs**.
+
+### Sơ đồ luồng dữ liệu (Data Flow Diagram)
 
 ```ascii
- [Bảng videos] (7,287 dòng clips)
-        │
-        ▼ Gom nhóm theo creator_id (SQL GROUP BY)
- [get_koc_mappings_summary RPC] (2,720 KOCs)
-        │
-        ▼ Yêu cầu HTTP qua API Supabase
- [PostgREST Server]
-  - Phát hiện truy vấn không phân trang
+Trường hợp 1: Lọc "Tất cả nhân viên"
+ [Cơ sở dữ liệu] (7,287 clips)
+       │
+       ▼ Gọi RPC get_videos_with_period_metrics (limit: 5000, p_assigned_user_id = NULL)
+ [Supabase API / PostgREST]
+  - Phát hiện truy vấn lớn hơn max_rows
   - Áp dụng cấu hình mặc định: max_rows = 1000
-        │
-        ▼ Trả về đúng 1000 KOC có GMV cao nhất
- [Frontend Client] (koc-mapping/page.tsx)
-  - mappings.length = 1000
-  - Render tiêu đề: (1000)
-  - Tìm kiếm client-side chỉ quét trên 1000 KOC này
-        │
-        ▼
- 1,720 KOC còn lại BIẾN MẤT HOÀN TOÀN khỏi màn hình quản lý!
+       │
+       ▼ Trả về 1000 clips có GMV lớn nhất hệ thống
+ [Frontend Client]
+  - Thực hiện gom nhóm `staffMap` trực tiếp từ mảng 1000 dòng này
+       │
+       ▼
+ [Linh Chi BOOKING] hiển thị: 256.385.428đ & 19 KOCs (Bị mất clips ngoài Top 1000)
+
+
+Trường hợp 2: Lọc riêng "Linh Chi BOOKING"
+ [Cơ sở dữ liệu] (7,287 clips)
+       │
+       ▼ Gọi RPC (limit: 5000, p_assigned_user_id = '<Linh Chi ID>')
+ [Supabase API / PostgREST]
+  - Lọc SQL dưới DB chỉ lấy clips của Linh Chi (tổng cộng 285 dòng)
+  - Vì 285 < max_rows 1000, trả về đầy đủ 285 dòng
+       │
+       ▼ Trả về toàn bộ 285 clips của Linh Chi
+ [Frontend Client]
+  - Gom nhóm `staffMap` từ 285 dòng đầy đủ này
+       │
+       ▼
+ [Linh Chi BOOKING] hiển thị: 260.634.592đ & 110 KOCs (Chính xác tuyệt đối)
 ```
 
 ---
 
 ## Đề xuất Sửa lỗi (Proposed Fixes)
 
-### Phương án 1: Phân trang & Tìm kiếm phía Server (Server-side Pagination & Search) - *Khuyến nghị dài hạn*
-Chúng ta sẽ nâng cấp hàm RPC `get_koc_mappings_summary` dưới database để nhận thêm các tham số phân trang và tìm kiếm:
-- Thêm `p_limit`, `p_offset` để phân trang.
-- Thêm `p_search` để tìm kiếm trực tiếp bằng SQL (`ILIKE`) dưới database.
-- **Frontend:**
-  - Thêm thanh phân trang (Pagination) dưới chân bảng KOC (tương tự như trang Booking / Thương hiệu).
-  - Khi gõ tìm kiếm, frontend sẽ gửi request xuống server để tìm kiếm trên toàn bộ 2,720 KOC thay vì chỉ lọc trên client.
-- **Ưu điểm:** Giải quyết triệt để vấn đề hiệu năng lâu dài. Khi hệ thống tăng lên 10,000 hay 50,000 KOC, giao diện vẫn load cực kỳ nhanh và mượt mà.
-- **Nhược điểm:** Cần chỉnh sửa cả database migration (hàm RPC) và viết thêm UI phân trang ở frontend.
+### Phương án 1: Tạo các hàm RPC chuyên dụng phía Server (Server-side Aggregation) - *Khuyến nghị tối ưu*
+Thay vì tải toàn bộ chi tiết video về client để tính toán thủ công (rất tốn băng thông và dễ lỗi do giới hạn dòng), chúng ta sẽ tạo các hàm RPC gom nhóm trực tiếp dưới PostgreSQL:
+1. **Tạo RPC `get_top_booking_staff_leaderboard`:**
+   - Thực hiện gom nhóm `GROUP BY assigned_user_id` từ bảng `videos` (LEFT JOIN với `video_period_metrics`).
+   - Tính tổng GMV (`COALESCE(SUM(gmv), 0)`) và đếm số KOC duy nhất (`COUNT(DISTINCT creator_id)`).
+   - Áp dụng đầy đủ các bộ lọc ngày tháng, sản phẩm, tag.
+   - Sắp xếp theo GMV giảm dần và giới hạn trả về tối đa 5 dòng.
+2. **Tạo RPC `get_top_kocs_leaderboard`:**
+   - Thực hiện gom nhóm `GROUP BY creator_id` để lấy danh sách TOP KOCs.
+3. **Frontend:**
+   - Gọi trực tiếp 2 hàm RPC này để lấy dữ liệu xếp hạng hiển thị.
+- **Ưu điểm:**
+  - Chính xác 100%, nhất quán ở mọi chế độ lọc.
+  - Cực kỳ tối ưu hiệu năng: Thay vì trình duyệt phải tải và xử lý mảng JSON 1,000 dòng, nay nó chỉ cần tải về đúng 5 dòng dữ liệu xếp hạng gọn nhẹ.
+- **Nhược điểm:** Cần viết thêm SQL migrations để tạo 2 hàm RPC mới trong database.
 
-### Phương án 2: Tự động tải tích lũy bằng Batching ở Frontend (Client-side Accumulation) - *Giải pháp nhanh chóng*
-Vì số lượng KOC hiện tại (2,720) là tương đối nhỏ, ta có thể giữ nguyên logic render và tìm kiếm client-side hiện tại, chỉ thay đổi cách fetch dữ liệu ở frontend:
-- Thay vì gọi RPC một lần duy nhất, ta sẽ viết một vòng lặp `while` dùng `.range(from, to)` (với step là 1000) để tải toàn bộ danh sách KOC từ RPC về client theo nhiều đợt liên tiếp (ví dụ: đợt 1: 0-999, đợt 2: 1000-1999, đợt 3: 2000-2999).
-- Sau khi gộp toàn bộ dữ liệu tải được vào state `mappings`, UI sẽ hiển thị chính xác con số **(2720)** và thanh tìm kiếm client-side sẽ hoạt động hoàn hảo trên toàn bộ 2,720 KOC.
-- **Ưu điểm:** Cực kỳ nhanh gọn, không cần sửa đổi RPC trong database migrations, chỉ chỉnh sửa khoảng 15 dòng code ở frontend file `page.tsx`.
-- **Nhược điểm:** Khi số lượng KOC tăng lên quá lớn (ví dụ >10,000), thời gian load trang ban đầu sẽ bị chậm lại do phải thực hiện nhiều request đồng bộ liên tiếp.
+### Phương án 2: Tải tích lũy clips bằng Batching ở Frontend (Client-side Accumulation)
+Tương tự như cách sửa lỗi KOC Mapping, ta viết vòng lặp tải toàn bộ video clips trong kỳ về frontend theo từng đợt `.range()` trước khi chạy hàm `useMemo` gom nhóm.
+- **Ưu điểm:** Chỉ sửa code frontend, không cần can thiệp database.
+- **Nhược điểm:** Hiệu năng cực kỳ kém. Khi database có hàng chục nghìn video, việc bắt trình duyệt tải toàn bộ video về chỉ để làm một bảng xếp hạng 5 dòng sẽ gây đơ và lag trang web cực kỳ nghiêm trọng. Không khuyến nghị sử dụng phương án này.
 
 ---
 
 ## Kế hoạch Xác minh
 
-1. **Kiểm tra hiển thị:**
-   - Sau khi áp dụng sửa đổi, kiểm tra xem con số trong tiêu đề có thay đổi từ `(1000)` thành tổng số lượng KOC thực tế hay không (ở thời điểm hiện tại phải là `(2720)` nếu dùng Phương án 2).
-2. **Kiểm tra tìm kiếm:**
-   - Tìm kiếm KOC có tên hoặc ID nằm ngoài top 1000 GMV (ví dụ: `chumdayy` hoặc ID `7599647465428173844`). Xác nhận dòng dữ liệu hiển thị chính xác.
-3. **Kiểm tra tính năng gán nhân viên:**
-   - Gán thử một nhân viên phụ trách cho một KOC nằm ngoài top 1000 này. Tải lại trang (F5) và xác nhận thông tin gán vẫn được lưu trữ thành công dưới database.
+1. **Xác minh số liệu khớp nhau:**
+   - Sau khi áp dụng sửa đổi, kiểm tra bảng xếp hạng **TOP NHÂN VIÊN BOOKING** ở chế độ lọc "Tất cả nhân viên". 
+   - Số liệu của *Linh Chi BOOKING* phải hiển thị chính xác là `260.634.592 đ` và `Phụ trách 110 KOCs` (hoặc khớp hoàn toàn với số liệu khi lọc riêng cô ấy).
+2. **Đối chiếu chéo:**
+   - Thực hiện kiểm tra tương tự với các nhân viên khác như *Quỳnh Anh BOOKING*, *Ngọc Ánh BOOKING*,... Đảm bảo số liệu hiển thị đồng nhất ở cả 2 chế độ lọc.

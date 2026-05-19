@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import type { PostgrestError } from '@supabase/supabase-js';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { TrendingUp, TrendingDown, UserCheck, FileDown, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -39,9 +40,8 @@ const EMPTY_SUMMARY: VideosSummary = {
 export default function BookingTeamPage() {
   const { user } = useUser();
   const [summary, setSummary] = useState<VideosSummary>(EMPTY_SUMMARY);
-  // leaderboardVideos still uses the limited RPC payload — top-N by GMV is
-  // unaffected because the RPC already orders gmv DESC server-side.
-  const [leaderboardVideos, setLeaderboardVideos] = useState<VideoWithMetrics[]>([]);
+  const [kocLeaderboard, setKocLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [staffLeaderboard, setStaffLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [paginatedVideos, setPaginatedVideos] = useState<VideoWithMetrics[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,24 +74,67 @@ export default function BookingTeamPage() {
         assignedUserId: filters.staffId,
       };
 
-      const [summaryResult, leaderboardResult, tableResult, usersResult] = await Promise.all([
+      const rpcArgs = {
+        p_period_start: periodStart ?? null,
+        p_period_end: periodEnd ?? null,
+        p_source_type: 'koc',
+        p_product_id: filters.productId || null,
+        p_min_gmv: filters.minGMV ? parseInt(filters.minGMV) : null,
+        p_min_views: filters.minViews ? parseInt(filters.minViews) : null,
+        p_search: filters.search || null,
+        p_tag_ids: filters.tagIds && filters.tagIds.length > 0 ? filters.tagIds : null,
+        p_assigned_user_id: filters.staffId || null,
+        p_limit: 5,
+      };
+
+      const [summaryResult, tableResult, usersResult, staffLbResult, kocLbResult] = await Promise.all([
         fetchVideosSummary(baseParams),
-        fetchVideosWithMetrics({ ...baseParams, limit: 5000, offset: 0 }),
         fetchVideosWithMetrics({
           ...baseParams,
           limit: pageSize,
           offset: (page - 1) * pageSize,
         }),
         supabase.from('profiles').select('*').eq('is_active', true),
+        supabase.rpc('get_top_booking_staff_leaderboard', rpcArgs),
+        supabase.rpc('get_top_kocs_leaderboard', rpcArgs),
       ]);
 
       setSummary(summaryResult);
-      setLeaderboardVideos(leaderboardResult.data);
       setPaginatedVideos(tableResult.data);
       setTotalCount(tableResult.totalCount);
 
       if (usersResult.error) throw usersResult.error;
       setUsers((usersResult.data as Profile[]) || []);
+
+      if (staffLbResult.error) throw staffLbResult.error as PostgrestError;
+      setStaffLeaderboard(
+        ((staffLbResult.data ?? []) as Array<{
+          assigned_user_id: string;
+          display_name: string | null;
+          total_gmv: number | string;
+          koc_count: number | string;
+        }>).map(r => ({
+          id: r.assigned_user_id,
+          name: r.display_name || 'Nhân viên',
+          value: Number(r.total_gmv) || 0,
+          subtitle: `Phụ trách ${Number(r.koc_count) || 0} KOCs`,
+        }))
+      );
+
+      if (kocLbResult.error) throw kocLbResult.error as PostgrestError;
+      setKocLeaderboard(
+        ((kocLbResult.data ?? []) as Array<{
+          creator_id: string;
+          creator_name: string | null;
+          total_gmv: number | string;
+          video_count: number | string;
+        }>).map(r => ({
+          id: r.creator_id,
+          name: r.creator_name || 'Hợp tác viên',
+          value: Number(r.total_gmv) || 0,
+          subtitle: `${Number(r.video_count) || 0} videos clip`,
+        }))
+      );
     } catch (error) {
       console.error('Lỗi khi tải dữ liệu KOC:', error);
     } finally {
@@ -107,56 +150,6 @@ export default function BookingTeamPage() {
     () => users.filter(u => u.role === 'staff_booking' || u.role === 'leader_booking'),
     [users]
   );
-
-  const kocLeaderboard = useMemo(() => {
-    const kocMap = new Map<string, { name: string; gmv: number; videos: number }>();
-
-    leaderboardVideos.forEach(v => {
-      const id = v.creator_id || 'unknown';
-      const current = kocMap.get(id) || { name: v.creator_name || 'Hợp tác viên', gmv: 0, videos: 0 };
-      kocMap.set(id, {
-        name: current.name,
-        gmv: current.gmv + (v.gmv || 0),
-        videos: current.videos + 1,
-      });
-    });
-
-    return Array.from(kocMap.entries())
-      .map(([id, stats]) => ({
-        id,
-        name: stats.name,
-        value: stats.gmv,
-        subtitle: `${stats.videos} videos clip`,
-      } as LeaderboardEntry))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
-  }, [leaderboardVideos]);
-
-  const staffLeaderboard = useMemo(() => {
-    const staffMap = new Map<string, { gmv: number; kocCount: Set<string> }>();
-
-    leaderboardVideos.forEach(v => {
-      if (!v.assigned_user_id) return;
-      const current = staffMap.get(v.assigned_user_id) || { gmv: 0, kocCount: new Set() };
-      staffMap.set(v.assigned_user_id, {
-        gmv: current.gmv + (v.gmv || 0),
-        kocCount: current.kocCount.add(v.creator_id || 'unknown'),
-      });
-    });
-
-    return Array.from(staffMap.entries())
-      .map(([uid, stats]) => {
-        const profile = users.find(u => u.id === uid);
-        return {
-          id: uid,
-          name: profile?.display_name || 'Nhân viên',
-          value: stats.gmv,
-          subtitle: `Phụ trách ${stats.kocCount.size} KOCs`,
-        } as LeaderboardEntry;
-      })
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
-  }, [leaderboardVideos, users]);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
   const formatNumber = (val: number) => new Intl.NumberFormat('vi-VN').format(val);
