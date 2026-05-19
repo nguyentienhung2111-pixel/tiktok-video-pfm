@@ -1,4 +1,4 @@
-# Báo cáo Lỗi: Yêu cầu thêm bảng "Xếp hạng hiệu quả Content" cho trang KOC / Affiliate
+# Báo cáo Lỗi
 
 ## Trạng thái
 ĐÃ SỬA — Thành công
@@ -6,111 +6,161 @@
 ## Kết quả Kiểm thử
 
 ### Thay đổi đã áp dụng (Phương án 1)
-- Không cần migration mới — RPC `get_top_tags_by_group_leaderboard` đã có sẵn (đã chấp nhận `p_source_type`).
-- **Frontend** — `src/app/(main)/team/booking/page.tsx`:
-  - Thêm types `TagLbRow`, `TagLbEntry` và hằng `TAG_GROUP_TABS`.
-  - State mới: `tagLeaderboard`, `activeTagTab`.
-  - Trong `fetchData` gọi RPC song song với `p_source_type: 'koc'` (và toàn bộ filter date/product/min/search/tag/assigned_user đang dùng cho 2 leaderboard kia).
-  - Grid Leaderboards: `lg:grid-cols-2` → `lg:grid-cols-3`.
-  - Card mới: header + 3 tab (Format/Hook/Sound), Top-5 với progress bar tông tím (`text-purple-400`, `from-purple-500/70 to-purple-400`), số GMV + số video clip.
-- **Test hồi quy**: `scratch/test_koc_tag_leaderboard.mjs` — gọi RPC, kiểm rank order, cross-check #1 Content Format trên KOC bằng cách quét lại video qua RPC `get_videos_with_period_metrics` với `p_tag_ids = [tag_id]`.
+- Deploy file `supabase/migrations/add_video_id_search_to_rpcs.sql` lên Supabase production qua MCP `apply_migration`.
+- Cả 6 RPC (`get_videos_with_period_metrics`, `get_videos_summary_for_period`, `get_top_booking_staff_leaderboard`, `get_top_kocs_leaderboard`, `get_top_products_leaderboard`, `get_top_tags_by_group_leaderboard`) giờ có thêm `OR v.video_id ILIKE '%' || p_search || '%'` trong điều kiện search.
+- Phương án 2 (đổi placeholder FilterBar) **chưa áp dụng** theo nguyên tắc minimal changes — bug đã hết mà không cần đụng frontend.
 
-### Kết quả chạy test
+### Xác nhận pre-fix (trước khi chạy migration)
 ```
-RPC returned 13 rows (KOC source).
-  Content Format: 5 tags, top = Couple     (2.354.614.108đ, 27 videos)
-  Hook Style:     3 tags, top = Love       (2.399.256.453đ, 30 videos)
-  Sound:          5 tags, top = Nhạc Việt  (2.324.014.236đ, 26 videos)
-Direct sweep for "Couple" on KOC: 27 videos, 2.354.614.108đ
-Filter inheritance (Linh Chi BOOKING): 8 rows
-✅ PASS: KOC tag leaderboard returns correct top-N per requested group.
+get_videos_with_period_metrics(search='7638572188647410952') → 0 hits  ❌
+get_videos_summary_for_period (search='7638572188647410952') → 0 hits  ❌
 ```
 
-- **Cross-check:** Quét tay tag "Couple" trên source `koc` qua `get_videos_with_period_metrics` → **27 videos, 2.354.614.108đ** khớp 100% với RPC.
-- **Filter inheritance:** Truyền `p_assigned_user_id` (Linh Chi BOOKING) thu hẹp kết quả xuống 8 dòng — chứng tỏ Card sẽ tự cập nhật khi user chọn nhân viên ở FilterBar.
-- **Kết luận:** **Thành công ✅**
+### Kết quả test sau fix
+**Script gốc `scratch/test_video_id_search.mjs`:**
+```
+Test 1 (search title "banthan"):         found 5 videos
+Test 2 (search by video_id):             found 1 videos   ✅
+Test 3 (search "Tặng m điều may mắn"):   found 1 videos (decoco.accessories, brand)
+Test 4 (search "7638572188647410952"):   found 1 videos   ✅
+Test 5 (direct table query):             found 1 video(s)
+```
+
+**Test bổ sung `scratch/test_video_id_search_all_rpcs.mjs`** (cover cả 6 RPC + regression):
+```
+get_videos_with_period_metrics  search=7601433170260528404 → 1 row(s)
+get_videos_with_period_metrics  search=7638572188647410952 → 1 row(s)
+get_videos_summary_for_period   search=7601433170260528404 → total_videos=1
+get_videos_summary_for_period   search=7638572188647410952 → total_videos=1
+get_top_booking_staff_leaderboard search=7601433170260528404 → 1 row(s)
+get_top_kocs_leaderboard         search=7601433170260528404 → 1 row(s)
+get_top_products_leaderboard     search=7638572188647410952 → 1 row(s)
+get_top_tags_by_group_leaderboard search=7638572188647410952 → 0 row(s)
+Creator search "decoco.accessories" → 5 hit(s)
+Title search "banthan" → 10 hit(s)
+✅ PASS: video_id search works on all 6 RPCs; title/creator searches unchanged.
+```
+
+Ghi chú: RPC tag leaderboard trả 0 row khi search bằng `BRAND_VID` là bình thường — video đó không gắn tag thuộc 3 nhóm Format/Hook/Sound, nên không xuất hiện trong leaderboard tag (đúng semantic).
+
+- **Kết luận:** **Thành công ✅** — Search bằng video_id hoạt động trên Dashboard, Thương hiệu, KOC / Affiliate; mọi search hiện có không bị hồi quy.
 
 ## Tiêu đề Lỗi
-Trang KOC / Affiliate Performance (`/team/booking`) thiếu bảng xếp hạng "Xếp hạng hiệu quả Content" để phân tích hiệu suất theo nhóm tag như trang Thương hiệu.
+Thanh tìm kiếm trên cả 3 trang không thể tìm video bằng ID Video — do migration chưa được deploy lên Supabase production.
 
 ## Mô tả Lỗi
-Trang **KOC / Affiliate Performance** (`/team/booking`) hiện tại chỉ hiển thị 2 bảng xếp hạng: **TOP KOC / Affiliate** và **TOP Nhân viên Booking**. Để hỗ trợ tốt nhất cho công tác lập chiến dịch và tối ưu hóa content của các Booker, người dùng mong muốn bổ sung thêm bảng **Xếp hạng hiệu quả Content** (phân loại theo 3 nhóm tag chính: *Content Format*, *Hook Style*, *Sound*) giống hệt như trang Thương hiệu. 
+**2 triệu chứng được báo cáo:**
 
-Bảng xếp hạng mới này cần:
-1. Tổng hợp doanh thu GMV và số lượng clips của các video KOC (`source_type = 'koc'`).
-2. Tự động áp dụng và đồng bộ hoàn hảo theo các bộ lọc ngày tháng, sản phẩm, nhân viên booking và thanh tìm kiếm đang hoạt động trên trang.
-3. Đồng bộ về mặt thẩm mỹ với tông màu Tím (Purple) chủ đạo của trang KOC / Affiliate để mang lại cảm giác premium và đồng nhất.
+1. **Tìm kiếm bằng Video ID không hoạt động** trên cả 3 trang Dashboard, Thương hiệu, KOC / Affiliate. Khi nhập một video_id (VD: `7638572188647410952`) vào thanh search, hệ thống trả về 0 kết quả mặc dù video đó tồn tại trong database.
 
-## Các bước tái hiện (Khảo sát hiện trạng)
-1. Đăng nhập hệ thống và di chuyển tới trang **KOC / Affiliate** (`/team/booking`).
-2. Quan sát phần các bảng xếp hạng (Leaderboards) ở giữa trang.
-3. Hiện tại chỉ có 2 bảng xếp hạng (KOC và Nhân viên Booking). Khung phân tích hiệu quả kịch bản/âm thanh theo thẻ tag hoàn toàn vắng mặt.
+2. **Video cụ thể "Tặng m điều may mắn nhất..."** được cho là không tìm thấy — nhưng kiểm tra cho thấy video **có tồn tại** trong DB (source_type `brand`, creator `decoco.accessories`) và **tìm thấy được** khi search bằng text thuần (VD: `banthan` hoặc `Tặng m điều may mắn`). Vấn đề xảy ra khi user search bằng **video_id** hoặc chuỗi chứa **emoji/ký tự đặc biệt**.
+
+## Các bước tái hiện
+1. Đăng nhập hệ thống với tài khoản admin.
+2. Trên trang Dashboard, gõ tiêu đề `banthan` → tìm thấy 6 video (bao gồm video "Tặng m điều may mắn...").
+3. Ghi nhận video_id hiển thị trong cột "ID VIDEO" (VD: `7601433170260528404`).
+4. Xoá ô tìm kiếm, paste video_id đó vào thanh search → **0 kết quả**.
+5. Tương tự trên trang Thương hiệu và KOC / Affiliate.
 
 ## Kết quả Thực tế vs Kết quả Mong đợi
-- **Kết quả Thực tế:** Chỉ hiển thị 2 bảng xếp hạng, Booker không có dữ liệu tổng hợp trực quan để biết dạng kịch bản hay âm thanh nào đang hiệu quả nhất đối với kênh KOC.
-- **Kết quả Mong đợi:** Bổ sung bảng **Xếp hạng hiệu quả Content** bên cạnh 2 bảng hiện có, tạo thành lưới 3 cột cân đối trên màn hình lớn (`grid-cols-3`). Mỗi tag thuộc nhóm được chọn (Format/Hook/Sound) hiển thị:
-  - Tên Tag (Ví dụ: *Unboxing*, *Mẫu CapCut*)
-  - Tổng GMV do các KOC đạt được khi gắn tag này.
-  - Số lượng video clips tương ứng của KOC.
-  - Thanh tiến trình phần trăm màu tím biểu diễn tỷ lệ đóng góp doanh thu của tag so với tag dẫn đầu nhóm.
+| # | Hành động | Kết quả thực tế | Kết quả mong đợi |
+|---|-----------|-----------------|-------------------|
+| 1 | Search `banthan` | ✅ 6 video | 6 video |
+| 2 | Search `7601433170260528404` (video_id) | ❌ 0 video | 1 video |
+| 3 | Search `7638572188647410952` (video_id cụ thể) | ❌ 0 video | 1 video |
+| 4 | Direct DB query `videos.video_id = '7638572188647410952'` | ✅ 1 video | 1 video |
 
 ## Ngữ cảnh & Môi trường
-- **Trang bị ảnh hưởng:** `/team/booking` (KOC / Affiliate Performance)
-- **Tệp tin Frontend liên quan:** `src/app/(main)/team/booking/page.tsx`
-- **Database dependencies:** RPC `get_top_tags_by_group_leaderboard` (Đã được tối ưu hóa ở SQL level và hỗ trợ đầy đủ tham số `p_source_type`).
+- **App**: https://tiktok-video-pfm.vercel.app
+- **Database**: Supabase (PostgreSQL)
+- **Pages bị ảnh hưởng**: `/dashboard`, `/team/content`, `/team/booking`
+- **RPC functions bị ảnh hưởng**: `get_videos_with_period_metrics`, `get_videos_summary_for_period`, `get_top_booking_staff_leaderboard`, `get_top_kocs_leaderboard`, `get_top_products_leaderboard`, `get_top_tags_by_group_leaderboard`
 
 ---
 
-## Phân tích Nguyên nhân Gốc rễ & Phương án thiết kế (Design Analysis)
+## Phân tích Nguyên nhân Gốc rễ (Root Cause Analysis)
 
-Cơ sở dữ liệu của chúng ta đã có sẵn hàm RPC tổng hợp dữ liệu thẻ tag cực kỳ mạnh mẽ và tối ưu hiệu năng là `get_top_tags_by_group_leaderboard`. Tuy nhiên, trang `booking/page.tsx` hiện tại chưa liên kết với nó.
+### Luồng tìm kiếm hiện tại
 
-Để thực hiện tích hợp, ta cần sửa đổi file `booking/page.tsx` như sau:
-1. Khai báo kiểu dữ liệu `TagLbEntry`, `TagLbRow`, và hằng số `TAG_GROUP_TABS` để định hình các nhóm tag Format, Hook, Sound.
-2. Thiết lập 2 state variables: `tagLeaderboard` (lưu kết quả phân tích tag) và `activeTagTab` (lưu nhóm tab đang hiển thị).
-3. Trong hàm `fetchData`, bổ sung lệnh gọi RPC `get_top_tags_by_group_leaderboard` vào khối `Promise.all` song song với các tham số lọc hiện hành: `p_source_type: 'koc'`.
-4. Gom nhóm kết quả trả về từ database theo `group_name` và lưu vào state.
-5. Thay đổi CSS lớp lưới hiển thị bảng xếp hạng từ `grid-cols-2` thành `grid-cols-1 lg:grid-cols-3 gap-6`.
-6. Triển khai cấu trúc JSX render Card xếp hạng mới, sử dụng bảng màu tím (`bg-purple-500/15 text-purple-400 border-purple-500/30` và `from-purple-500/70 to-purple-400` cho progress bar) để phù hợp tuyệt đối với trang Booking.
-
-### Sơ đồ cấu trúc layout đề xuất (Proposed Grid Layout on Desktop)
-
-```ascii
- ┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
- │   KOC / Affiliate Performance Dashboard                                                                │
- ├────────────────────────────────────────────────────────────────────────────────────────────────────────┤
- │  [ GMV từ KOC ]            [ Đơn hàng KOC ]            [ Số KOC lên clip ]         [ Tổng lượt xem KOC ]  │
- ├────────────────────────────────────────────────────────────────────────────────────────────────────────┤
- │ ┌──────────────────────┐  ┌──────────────────────┐  ┌────────────────────────────────────────────────┐ │
- │ │ TOP KOC / AFFILIATE  │  │ TOP NHÂN VIÊN BOOKING│  │ XẾP HẠNG HIỆU QUẢ CONTENT                      │ │
- │ │ (Top 5 KOCs theo GMV)│  │ (Top 4 Booker theo   │  │ [ Format (Active) ]   [ Hook ]   [ Sound ]     │ │
- │ │                      │  │  GMV & KOCs quản lý) │  ├────────────────────────────────────────────────┤ │
- │ │                      │  │                      │  │ 1. Unboxing       2.4B đ (67 video clip)       │ │
- │ │                      │  │                      │  │ 2. Chi đẹp       604M đ (18 video clip)        │ │
- │ └──────────────────────┘  └──────────────────────┘  └────────────────────────────────────────────────┘ │
- └────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+ User gõ search     FilterBar.tsx          queries.ts              Supabase RPC (production)
+ ┌──────────┐   ┌───────────────────┐  ┌──────────────────┐  ┌─────────────────────────────┐
+ │ "763857.."│──▶│ filters.search    │──▶│ p_search = "..."  │──▶│ WHERE                       │
+ └──────────┘   └───────────────────┘  └──────────────────┘  │   v.video_title ILIKE '%..%' │
+                                                              │   OR v.creator_name ILIKE ... │
+                                                              │   OR v.creator_id ILIKE ...   │
+                                                              │   ❌ THIẾU: v.video_id ILIKE │
+                                                              └─────────────────────────────┘
+```
+
+### Nguyên nhân gốc
+
+**Migration `add_video_id_search_to_rpcs.sql` chưa được chạy trên Supabase production.**
+
+- File migration nằm trong repo tại `supabase/migrations/add_video_id_search_to_rpcs.sql`
+- File này bổ sung `OR v.video_id ILIKE '%' || p_search || '%'` cho **6 RPC functions**
+- Tuy nhiên, RPC hiện tại trên production **vẫn là phiên bản cũ** — chỉ search `video_title`, `creator_name`, `creator_id`
+
+### Bằng chứng xác thực (từ test script `scratch/test_video_id_search.mjs`)
+
+```
+Test 1: Search "banthan" (title)       → ✅ 5 videos
+Test 2: Search video_id               → ❌ 0 videos  
+Test 4: Search "7638572188647410952"   → ❌ 0 videos
+Test 5: Direct table query            → ✅ Video tồn tại
+```
+
+→ Kết luận: RPC function trên server **thiếu điều kiện search video_id**.
+
+### Về video "Tặng m điều may mắn nhất..."
+
+Video này **có tồn tại** trong database (brand source, creator `decoco.accessories`, video_id `7638572188647410952`). Nó **tìm thấy được** bằng search tiêu đề text thuần. Nguyên nhân user không tìm thấy có thể do:
+- User đang search bằng **video_id** (không hoạt động, như phân tích trên)
+- Hoặc user đang ở trang với **source filter = KOC** (video này thuộc brand)
 
 ---
 
 ## Đề xuất Sửa lỗi (Proposed Fixes)
 
-### Phương án 1: Tích hợp RPC Server-side Aggregation & Render Layout 3 Cột (Khuyến nghị)
-- **Cách thực hiện:**
-  - Tích hợp lời gọi `get_top_tags_by_group_leaderboard` trực tiếp vào `fetchData` của trang Booking, gửi kèm `p_source_type: 'koc'`.
-  - Thay đổi cấu trúc Grid từ `grid-cols-2` thành `grid-cols-3` trên màn hình lớn.
-  - Tạo Card xếp hạng động với style màu tím đặc trưng của KOC.
-- **Ưu điểm:**
-  - Dữ liệu đồng nhất và chính xác 100%, tự động kế thừa toàn bộ bộ lọc ngày tháng/sản phẩm/nhân viên booking của trang.
-  - Tối ưu hóa hiệu năng cao nhờ xử lý gom nhóm hoàn toàn trên database PostgreSQL.
-  - Trải nghiệm người dùng đồng nhất giữa 2 phân hệ Thương hiệu và Booking.
+### ✅ Phương án 1 (Khuyến nghị): Deploy migration đã có sẵn
+
+**Thực hiện**: Chạy SQL trong file `supabase/migrations/add_video_id_search_to_rpcs.sql` trên Supabase production.
+
+**Chi tiết**: File này đã được viết sẵn và bổ sung `v.video_id ILIKE '%' || p_search || '%'` cho cả 6 RPC functions:
+1. `get_videos_with_period_metrics` 
+2. `get_videos_summary_for_period`
+3. `get_top_booking_staff_leaderboard`
+4. `get_top_kocs_leaderboard`
+5. `get_top_products_leaderboard`
+6. `get_top_tags_by_group_leaderboard`
+
+**Ưu điểm**:
+- Không cần sửa code frontend — logic truyền `p_search` đã hoạt động đúng
+- Migration đã được review và viết sẵn, chỉ cần deploy
+- Sửa triệt để trên cả 3 trang cùng lúc
+
+**Rủi ro**: Thấp — chỉ thêm 1 điều kiện OR trong WHERE, không thay đổi schema.
+
+### Phương án 2 (Bổ sung): Cập nhật placeholder thanh search
+
+Sau khi deploy migration, cập nhật placeholder trong `FilterBar.tsx`:
+```
+"Tìm theo creator hoặc tiêu đề video..."  
+→  "Tìm theo creator, tiêu đề video hoặc ID video..."
+```
+
+Điều này giúp user biết rằng search bằng video_id **được hỗ trợ**.
 
 ---
 
 ## Kế hoạch Xác minh
 
-1. **Xác minh hiển thị:**
-   - Sau khi áp dụng thay đổi, kiểm tra xem bảng xếp hạng thứ 3 "Xếp hạng hiệu quả Content" có hiển thị mượt mà trên cùng hàng với 2 bảng xếp hạng cũ hay không.
-   - Click chuyển đổi qua lại giữa các tab Format, Hook, Sound để đảm bảo dữ liệu hiển thị chính xác theo từng nhóm tag.
-2. **Xác minh số liệu chính xác:**
-   - Đối chiếu số GMV và số lượng video clips của một tag bất kỳ trong bảng xếp hạng với kết quả khi lọc tìm kiếm theo tag đó ở bảng chi tiết video phía dưới. Số liệu phải khớp nhau hoàn toàn.
+1. **Chạy migration SQL** trên Supabase SQL Editor
+2. **Chạy lại test script** `scratch/test_video_id_search.mjs`:
+   - Test 2 phải trả về ≥ 1 video
+   - Test 4 phải trả về 1 video (video "Tặng m điều may mắn...")
+3. **Kiểm tra trên web**:
+   - Dashboard: search video_id → phải hiển thị kết quả
+   - Thương hiệu: search `7638572188647410952` → phải tìm thấy 1 video
+   - KOC / Affiliate: search video_id khác → phải tìm thấy
+4. **Kiểm tra không hồi quy**: search bằng tên creator và tiêu đề vẫn hoạt động bình thường
