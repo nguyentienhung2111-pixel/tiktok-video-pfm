@@ -2,9 +2,9 @@
 
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import type { PostgrestError } from '@supabase/supabase-js';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { TrendingUp, TrendingDown, UserCheck, FileDown, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, UserCheck, FileDown, Loader2, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { VideoWithMetrics, Profile } from '@/types';
@@ -37,11 +37,22 @@ const EMPTY_SUMMARY: VideosSummary = {
   totalCreators: 0,
 };
 
+type TagLbRow = { group_name: string; tag_id: string; tag_name: string; total_gmv: number | string; video_count: number | string; rank_in_group: number };
+type TagLbEntry = { id: string; name: string; gmv: number; videoCount: number };
+
+const TAG_GROUP_TABS: ReadonlyArray<{ key: 'Format' | 'Hook' | 'Sound'; label: string; groupName: string }> = [
+  { key: 'Format', label: 'Format', groupName: 'Content Format' },
+  { key: 'Hook',   label: 'Hook',   groupName: 'Hook Style'    },
+  { key: 'Sound',  label: 'Sound',  groupName: 'Sound'         },
+];
+
 export default function BookingTeamPage() {
   const { user } = useUser();
   const [summary, setSummary] = useState<VideosSummary>(EMPTY_SUMMARY);
   const [kocLeaderboard, setKocLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [staffLeaderboard, setStaffLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [tagLeaderboard, setTagLeaderboard] = useState<Record<string, TagLbEntry[]>>({});
+  const [activeTagTab, setActiveTagTab] = useState<'Format' | 'Hook' | 'Sound'>('Format');
   const [paginatedVideos, setPaginatedVideos] = useState<VideoWithMetrics[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,7 +98,14 @@ export default function BookingTeamPage() {
         p_limit: 5,
       };
 
-      const [summaryResult, tableResult, usersResult, staffLbResult, kocLbResult] = await Promise.all([
+      const { p_limit: _ignore, ...tagBaseArgs } = rpcArgs;
+      const tagRpcArgs = {
+        ...tagBaseArgs,
+        p_groups: TAG_GROUP_TABS.map(t => t.groupName),
+        p_limit_per_group: 5,
+      };
+
+      const [summaryResult, tableResult, usersResult, staffLbResult, kocLbResult, tagLbResult] = await Promise.all([
         fetchVideosSummary(baseParams),
         fetchVideosWithMetrics({
           ...baseParams,
@@ -97,6 +115,7 @@ export default function BookingTeamPage() {
         supabase.from('profiles').select('*').eq('is_active', true),
         supabase.rpc('get_top_booking_staff_leaderboard', rpcArgs),
         supabase.rpc('get_top_kocs_leaderboard', rpcArgs),
+        supabase.rpc('get_top_tags_by_group_leaderboard', tagRpcArgs),
       ]);
 
       setSummary(summaryResult);
@@ -135,6 +154,19 @@ export default function BookingTeamPage() {
           subtitle: `${Number(r.video_count) || 0} videos clip`,
         }))
       );
+
+      if (tagLbResult.error) throw tagLbResult.error as PostgrestError;
+      const grouped: Record<string, TagLbEntry[]> = {};
+      for (const row of (tagLbResult.data ?? []) as TagLbRow[]) {
+        const list = grouped[row.group_name] ?? (grouped[row.group_name] = []);
+        list.push({
+          id: row.tag_id,
+          name: row.tag_name,
+          gmv: Number(row.total_gmv) || 0,
+          videoCount: Number(row.video_count) || 0,
+        });
+      }
+      setTagLeaderboard(grouped);
     } catch (error) {
       console.error('Lỗi khi tải dữ liệu KOC:', error);
     } finally {
@@ -220,9 +252,75 @@ export default function BookingTeamPage() {
         </div>
 
         {/* Leaderboards */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Leaderboard title="TOP KOC / Affiliate" entityType="koc" entries={kocLeaderboard} valueLabel={formatCurrency} />
           <Leaderboard title="TOP Nhân viên Booking" entityType="staff" entries={staffLeaderboard} valueLabel={formatCurrency} />
+          <Card className="border-[#30363d] bg-[#161b22] overflow-hidden flex flex-col">
+            <CardHeader className="pb-2 flex flex-row items-center justify-between border-b border-[#30363d] bg-[#0d1117]/50">
+              <CardTitle className="text-sm font-black uppercase tracking-widest text-[#94a3b8] flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-purple-500" />
+                Xếp hạng Hiệu quả Content
+              </CardTitle>
+              <div className="flex items-center gap-1 export-ignore">
+                {TAG_GROUP_TABS.map(tab => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTagTab(tab.key)}
+                    className={cn(
+                      "px-3 py-1 text-xs font-bold uppercase tracking-wider rounded-md transition-colors",
+                      activeTagTab === tab.key
+                        ? "bg-purple-500/15 text-purple-400 border border-purple-500/30"
+                        : "text-muted-foreground hover:text-white hover:bg-white/[0.04] border border-transparent"
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 flex-1">
+              {(() => {
+                const groupName = TAG_GROUP_TABS.find(t => t.key === activeTagTab)?.groupName ?? '';
+                const entries = tagLeaderboard[groupName] ?? [];
+                const max = entries.length > 0 ? entries[0].gmv : 0;
+                if (entries.length === 0) {
+                  return (
+                    <div className="py-10 text-center text-sm text-muted-foreground">
+                      Chưa có dữ liệu cho nhóm &quot;{groupName}&quot;.
+                    </div>
+                  );
+                }
+                return (
+                  <ol className="space-y-3">
+                    {entries.map((e, idx) => {
+                      const pct = max > 0 ? Math.max(2, Math.round((e.gmv / max) * 100)) : 0;
+                      return (
+                        <li key={e.id} className="space-y-1.5">
+                          <div className="flex items-baseline justify-between gap-3">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-xs font-bold text-muted-foreground w-5 shrink-0">#{idx + 1}</span>
+                              <span className="font-bold text-white truncate">{e.name}</span>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <div className="text-sm font-bold text-purple-400">{formatCurrency(e.gmv)}</div>
+                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{e.videoCount} video clip</div>
+                            </div>
+                          </div>
+                          <div className="h-1.5 w-full rounded-full bg-[#0d1117] overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-purple-500/70 to-purple-400"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                );
+              })()}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Video Table */}
