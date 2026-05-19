@@ -116,7 +116,7 @@ const NUMERIC_FIELDS = new Set([
 const METADATA_FIELDS = new Set([
   'video_id', 'source_type', 'creator_name', 'creator_id',
   'video_title', 'published_at', 'product_name', 'product_id',
-  'diagnosis', 'assigned_user_id', 'tags',
+  'diagnosis', 'assigned_user_id',
 ]);
 
 // Fields that go into video_period_metrics table
@@ -227,7 +227,6 @@ function mapRow(
   const metadata: Record<string, unknown> = {
     source_type: sourceType,
     product_id: null,
-    tags: [],
     raw_data: row,
   };
 
