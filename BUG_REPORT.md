@@ -1,7 +1,12 @@
 # Bug Report
 
 ## Status
-ĐANG SỬA CHỮA — đã implement guard tên file ↔ kỳ báo cáo. Phân tích hoàn chỉnh đã xác định 4 vấn đề (xem "Bức tranh tổng thể").
+ĐÃ XỬ LÝ phần kỹ thuật (commit `f55b995`, đã push `main` → Vercel). Còn 1 việc cần bạn (export lại kỳ 22/1–21/4 theo tuần).
+
+- ✅ (1) Đã XOÁ kỳ rác `02-03 → 02-28` (1.144 dòng). Brand all-time: 5.245.248.002 → **3.782.750.195**.
+- ✅ (3) Đã sửa nút Xoá: xoá theo `(kỳ suy từ tên file + source_type)`, không còn xoá theo `videos.created_at`, không xoá nhầm bảng `videos`. Không cần đổi schema.
+- ✅ (4) Guard tên file ↔ kỳ báo cáo (chặn upload lệch kỳ).
+- ⏳ (2) **Cần bạn:** export lại kỳ `22/1 → 21/4` theo từng tuần rồi upload lại để bù phần thiếu (−1,32 tỷ Brand / −1,44 tỷ Aff do file 3 tháng bị cắt cụt). Guard mới sẽ đảm bảo upload đúng kỳ.
 
 ---
 
