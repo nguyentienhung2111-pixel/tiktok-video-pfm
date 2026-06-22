@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Undo2, AlertTriangle, Loader2, CheckCircle, FileSpreadsheet, Clock } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { parsePeriodFromFileName } from './UploadForm';
 
 interface UploadRecord {
   id: string;
@@ -66,52 +67,69 @@ export default function DeleteLastUploadButton({ sourceType }: DeleteLastUploadB
     setMessage('Đang tìm và xoá dữ liệu lần upload gần nhất...');
 
     try {
-      const uploadTime = new Date(lastUpload.created_at);
-      // Videos created within a 30-second window around the upload timestamp
-      const timeBefore = new Date(uploadTime.getTime() - 30 * 1000).toISOString();
-      const timeAfter = new Date(uploadTime.getTime() + 30 * 1000).toISOString();
-
-      let totalDeleted = 0;
-
-      // Find and delete videos created in the upload window
-      while (true) {
-        const { data: batch, error: fetchError } = await supabase
-          .from('videos')
-          .select('id, video_id')
-          .gte('created_at', timeBefore)
-          .lte('created_at', timeAfter)
-          .limit(500);
-
-        if (fetchError) throw fetchError;
-        if (!batch || batch.length === 0) break;
-
-        const ids = batch.map((r) => r.id);
-        const videoIds = batch.map((r) => r.video_id);
-
-        // Delete associated period metrics first
-        const { error: metricsError } = await supabase
-          .from('video_period_metrics')
-          .delete()
-          .in('video_id', videoIds);
-
-        if (metricsError) {
-          console.error('Metrics delete error:', metricsError);
-          // Continue even if metrics deletion fails (cascade should handle it)
-        }
-
-        // Delete videos
-        const { error: delError } = await supabase
-          .from('videos')
-          .delete()
-          .in('id', ids);
-
-        if (delError) throw delError;
-
-        totalDeleted += ids.length;
-        setMessage(`Đã xoá ${totalDeleted} video...`);
+      // Determine the report period from the file name (e.g. ..._15.06.26_21.06.26.xlsx).
+      // We scope the delete by (period_start, period_end, source_type) so it removes exactly
+      // the metrics this upload wrote — instead of the old, buggy `videos.created_at` window
+      // which missed re-used videos and left orphaned period metrics behind.
+      const period = parsePeriodFromFileName(lastUpload.file_name);
+      if (!period) {
+        setStatus('error');
+        setMessage('Không xác định được kỳ báo cáo từ tên file (cần dạng ..._DD.MM.YY_DD.MM.YY). Không thể xoá an toàn theo kỳ — hãy xoá thủ công trong Supabase.');
+        return;
       }
 
-      // Delete the upload_history record
+      const PAGE = 1000;
+
+      // 1) Collect all video_ids belonging to this source type
+      const sourceVideoIds = new Set<string>();
+      let vFrom = 0;
+      while (true) {
+        const { data: vbatch, error: vErr } = await supabase
+          .from('videos')
+          .select('video_id')
+          .eq('source_type', lastUpload.source_type)
+          .range(vFrom, vFrom + PAGE - 1);
+        if (vErr) throw vErr;
+        if (!vbatch || vbatch.length === 0) break;
+        vbatch.forEach((r) => sourceVideoIds.add(r.video_id as string));
+        if (vbatch.length < PAGE) break;
+        vFrom += PAGE;
+      }
+
+      // 2) Find metric rows for this exact period whose video belongs to this source
+      const idsToDelete: string[] = [];
+      let mFrom = 0;
+      while (true) {
+        const { data: mbatch, error: mErr } = await supabase
+          .from('video_period_metrics')
+          .select('id, video_id')
+          .eq('period_start', period.start)
+          .eq('period_end', period.end)
+          .range(mFrom, mFrom + PAGE - 1);
+        if (mErr) throw mErr;
+        if (!mbatch || mbatch.length === 0) break;
+        for (const r of mbatch) {
+          if (sourceVideoIds.has(r.video_id as string)) idsToDelete.push(r.id as string);
+        }
+        if (mbatch.length < PAGE) break;
+        mFrom += PAGE;
+      }
+
+      // 3) Delete those metric rows in batches (videos rows are kept — they may belong to other periods)
+      let totalDeleted = 0;
+      const DEL = 200;
+      for (let i = 0; i < idsToDelete.length; i += DEL) {
+        const chunk = idsToDelete.slice(i, i + DEL);
+        const { error: delErr } = await supabase
+          .from('video_period_metrics')
+          .delete()
+          .in('id', chunk);
+        if (delErr) throw delErr;
+        totalDeleted += chunk.length;
+        setMessage(`Đã xoá ${totalDeleted}/${idsToDelete.length} dòng metric...`);
+      }
+
+      // 4) Delete the upload_history record
       const { error: historyError } = await supabase
         .from('upload_history')
         .delete()
@@ -122,7 +140,7 @@ export default function DeleteLastUploadButton({ sourceType }: DeleteLastUploadB
       }
 
       setStatus('success');
-      setMessage(`Đã xoá thành công ${totalDeleted} video từ lần upload "${lastUpload.file_name}"!`);
+      setMessage(`Đã xoá ${totalDeleted} dòng metric của kỳ ${period.start} → ${period.end} (${lastUpload.source_type === 'brand' ? 'Thương hiệu' : 'KOC'}) từ file "${lastUpload.file_name}".`);
 
       // Refresh to get the new last upload
       setTimeout(() => {
@@ -189,7 +207,7 @@ export default function DeleteLastUploadButton({ sourceType }: DeleteLastUploadB
               Xoá lần upload gần nhất ({sourceType === 'brand' ? 'Thương hiệu' : 'KOC / Affiliate'})
             </h3>
           <p className="text-xs text-[#94a3b8] mt-1">
-            Xoá tất cả video của lần upload gần nhất. Hành động này không thể hoàn tác.
+            Xoá số liệu (metric) của đúng kỳ &amp; nguồn từ lần upload gần nhất. Hành động này không thể hoàn tác.
           </p>
 
           {/* Last upload info */}
@@ -249,7 +267,7 @@ export default function DeleteLastUploadButton({ sourceType }: DeleteLastUploadB
       {status === 'confirming' && (
         <div className="flex items-center gap-2 text-amber-400 bg-amber-500/10 border border-amber-500/20 px-4 py-3 rounded-xl text-sm">
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-          <span>Bạn có chắc chắn? Tất cả video từ file &ldquo;{lastUpload.file_name}&rdquo; sẽ bị xoá!</span>
+          <span>Bạn có chắc chắn? Số liệu kỳ tương ứng từ file &ldquo;{lastUpload.file_name}&rdquo; sẽ bị xoá!</span>
         </div>
       )}
 

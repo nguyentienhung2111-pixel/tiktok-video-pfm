@@ -114,6 +114,20 @@ export const BRAND_CREATORS = [
   'reviewphukien',
 ];
 
+// Parse the reporting period from a file name formatted as
+// "..._DD.MM.YY_DD.MM.YY.xlsx" (e.g. "..._15.06.26_21.06.26.xlsx").
+// Returns ISO date strings { start, end } or null when no range is present.
+export function parsePeriodFromFileName(name: string): { start: string; end: string } | null {
+  const m = name.match(/(\d{2})\.(\d{2})\.(\d{2})[_-](\d{2})\.(\d{2})\.(\d{2})/);
+  if (!m) return null;
+  const toIso = (d: string, mo: string, y: string) => `20${y}-${mo}-${d}`;
+  const start = toIso(m[1], m[2], m[3]);
+  const end = toIso(m[4], m[5], m[6]);
+  // Reject impossible dates so a clearly malformed name is treated as "no range"
+  if (isNaN(Date.parse(start)) || isNaN(Date.parse(end))) return null;
+  return { start, end };
+}
+
 const NUMERIC_FIELDS = new Set([
   'views', 'likes', 'comments', 'shares', 'orders', 'gmv',
   'new_followers', 'impressions', 'reach',
@@ -305,6 +319,33 @@ export default function UploadForm({ sourceType, onSourceTypeChange }: UploadFor
 
     const periodStart = format(reportPeriod.from, 'yyyy-MM-dd');
     const periodEnd = format(reportPeriod.to, 'yyyy-MM-dd');
+
+    // Guard: the period encoded in the file name must match the selected report period.
+    // This prevents creating mislabeled/overlapping periods (e.g. selecting 08–21/6 but
+    // uploading the 08–14/6 file), which silently inflates totals.
+    const fileName = file.name;
+    const filePeriod = parsePeriodFromFileName(fileName);
+    const toDisplay = (iso: string) => iso.split('-').reverse().join('/');
+
+    if (!filePeriod) {
+      setUploadStatus({
+        type: 'error',
+        message: 'Tên file không chứa khoảng thời gian hợp lệ.',
+        detail: 'Đặt tên file theo định dạng ..._DD.MM.YY_DD.MM.YY.xlsx (VD: ..._15.06.26_21.06.26.xlsx) để hệ thống đối chiếu với kỳ báo cáo.'
+      });
+      e.target.value = '';
+      return;
+    }
+
+    if (filePeriod.start !== periodStart || filePeriod.end !== periodEnd) {
+      setUploadStatus({
+        type: 'error',
+        message: 'Kỳ báo cáo KHÔNG khớp thời gian trong tên file — đã chặn upload.',
+        detail: `Kỳ đã chọn: ${toDisplay(periodStart)} → ${toDisplay(periodEnd)} | Trong tên file: ${toDisplay(filePeriod.start)} → ${toDisplay(filePeriod.end)}. Hãy chọn đúng kỳ báo cáo trùng với tên file rồi thử lại.`
+      });
+      e.target.value = '';
+      return;
+    }
 
     setIsUploading(true);
     setUploadStatus({ type: null, message: '' });
