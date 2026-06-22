@@ -104,6 +104,16 @@ const COLUMN_MAPPING: Record<string, string | undefined> = {
   'orders': 'orders',
 };
 
+// Official brand creators (channels) to exclude from KOC upload to avoid data overlaps
+export const BRAND_CREATORS = [
+  'decoco.accessories',
+  'decoco.xinchao',
+  'tienthoitrend',
+  'quanhdanhgia_9x',
+  'thosandealhoi',
+  'reviewphukien',
+];
+
 const NUMERIC_FIELDS = new Set([
   'views', 'likes', 'comments', 'shares', 'orders', 'gmv',
   'new_followers', 'impressions', 'reach',
@@ -353,15 +363,30 @@ export default function UploadForm({ sourceType, onSourceTypeChange }: UploadFor
 
         const mappedRows = jsonData.map(row => mapRow(row, sourceType, skuMappings || []));
 
-        if (mappedRows.length === 0) {
-          throw new Error('Không có dữ liệu hợp lệ được trích xuất từ file.');
+        let filteredRows = mappedRows;
+        let skippedBrandRowsCount = 0;
+
+        if (sourceType === 'koc') {
+          const brandCreatorsSet = new Set(BRAND_CREATORS.map(c => c.toLowerCase().trim()));
+          filteredRows = mappedRows.filter(row => {
+            const creatorName = String(row.metadata.creator_name || '').toLowerCase().trim();
+            const isBrand = brandCreatorsSet.has(creatorName);
+            if (isBrand) {
+              skippedBrandRowsCount++;
+            }
+            return !isBrand;
+          });
+        }
+
+        if (filteredRows.length === 0) {
+          throw new Error('Không có dữ liệu hợp lệ được trích xuất từ file (hoặc toàn bộ dòng đã bị lọc bỏ do thuộc kênh chính chủ Brand).');
         }
 
         // Merge duplicates by video_id
         const videoMap = new Map<string, { metadata: Record<string, unknown>; metrics: Record<string, unknown> }>();
         let duplicateCount = 0;
 
-        for (const { metadata, metrics } of mappedRows) {
+        for (const { metadata, metrics } of filteredRows) {
           const vid = String(metadata['video_id']);
           const existing = videoMap.get(vid);
 
@@ -384,6 +409,7 @@ export default function UploadForm({ sourceType, onSourceTypeChange }: UploadFor
         }
 
         const mergedEntries = Array.from(videoMap.values());
+
 
         // Step 1: Upsert metadata into videos table
         const BATCH_SIZE = 200;
@@ -430,9 +456,8 @@ export default function UploadForm({ sourceType, onSourceTypeChange }: UploadFor
           error_count: 0,
         });
 
-        const mergeInfo = duplicateCount > 0
-          ? ` (${duplicateCount} dòng trùng ID đã được cộng tổng)`
-          : '';
+        const mergeInfo = (duplicateCount > 0 ? ` (${duplicateCount} dòng trùng ID đã được cộng tổng)` : '') +
+          (skippedBrandRowsCount > 0 ? ` [Đã lọc bỏ ${skippedBrandRowsCount} dòng thuộc kênh Brand]` : '');
 
         setUploadStatus({
           type: 'success',
