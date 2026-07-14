@@ -161,7 +161,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Scorecards */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 animate-in fade-in slide-in-from-bottom-4 duration-700">
           {scorecards.map((item, i) => (
             <Card key={item.label} className={cn(
               "border-[#30363d] bg-[#161b22] relative overflow-hidden transition-all hover:scale-[1.02] hover:border-primary/50",

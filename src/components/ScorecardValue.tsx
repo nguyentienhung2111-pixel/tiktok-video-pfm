@@ -2,8 +2,8 @@ import { cn } from '@/lib/utils';
 
 /**
  * Renders a preformatted scorecard value, splitting a trailing currency symbol
- * (₫ / đ) so it can be shown smaller next to the number. Long numbers wrap
- * (break-all) instead of overflowing/ellipsing inside narrow grid cells.
+ * (₫ / đ) so it can be shown smaller next to the number. The value is kept on a
+ * single line (whitespace-nowrap); width comes from a wider (3-column) grid.
  * `numberClassName` controls the responsive size of the number per grid density.
  */
 export function ScorecardValue({
@@ -18,7 +18,7 @@ export function ScorecardValue({
   const unit = match ? match[2].trim() : '';
 
   return (
-    <p className="mt-2 flex items-baseline gap-1 break-all text-white">
+    <p className="mt-2 flex items-baseline gap-1 whitespace-nowrap text-white">
       <span className={cn('font-black leading-tight', numberClassName ?? 'text-2xl sm:text-3xl')}>
         {number}
       </span>

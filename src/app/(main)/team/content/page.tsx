@@ -213,7 +213,7 @@ export default function ContentTeamPage() {
           <FilterBar filters={filters} setFilters={setFilters} onClear={() => setFilters(INITIAL_FILTERS)} />
         </div>
 
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-3 animate-in fade-in slide-in-from-bottom-4 duration-700">
           {scorecards.map((item) => (
             <Card key={item.label} className="border-[#30363d] bg-[#161b22] hover:border-emerald-500/50 transition-all">
               <CardContent className="p-3 sm:p-4">
