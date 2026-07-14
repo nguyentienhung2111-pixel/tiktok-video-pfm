@@ -4,166 +4,184 @@
 ĐÃ SỬA CHỮA — ✅ THÀNH CÔNG (xem "Kết quả Sửa lỗi" ở cuối)
 
 ## Tiêu đề Lỗi
-Người dùng chưa đăng nhập vẫn truy cập trực tiếp được trang Dashboard và các URL nội bộ khác để xem dữ liệu.
+Bộ lọc nhanh thời gian ở các trang Dashboard, Thương hiệu, KOC / Affiliate chưa hỗ trợ chu kỳ lọc theo tuần phù hợp với đặc thù dữ liệu upload.
 
 ## Mô tả Lỗi
-Hiện tại, khi người dùng chưa thực hiện đăng nhập (hoặc trong phiên ẩn danh không có Session/Cookie), họ vẫn có thể truy cập trực tiếp vào các đường dẫn nội bộ của hệ thống như:
-* `/dashboard`
-* `/admin/*` (upload, accounts, products, tags, settings)
-* `/team/*` (content, booking)
-* `/guideline`
+Dữ liệu hiệu suất video của hệ thống được tải lên định kỳ theo từng tuần (file Excel xuất từ TikTok Seller Center). Hiện tại, các bộ lọc nhanh (Quick Filters) của bộ chọn thời gian (`DateRangePicker`) đang được tính toán theo số ngày lùi trực tiếp từ ngày hôm nay (`today`), cụ thể:
+* "7 ngày qua": Lọc từ `subDays(today, 7)` đến `today`.
+* "28 ngày qua": Lọc từ `subDays(today, 28)` đến `today`.
+* "90 ngày qua": Lọc từ `subDays(today, 90)` đến `today`.
 
-Hệ thống không hề chặn truy cập hay chuyển hướng người dùng về trang đăng nhập (`/login`), đồng thời vẫn tải dữ liệu từ database thông qua các API và hiển thị đầy đủ số liệu thực tế trên giao diện.
+Cách tính này lấy mốc đến ngày hôm nay (`today`), trong khi tuần hiện tại chưa kết thúc hoặc chưa có dữ liệu mới đầy đủ. Điều này dẫn đến việc số liệu hiển thị bị lẻ tuần, thiếu hụt hoặc lẫn lộn dữ liệu của tuần hiện tại (chưa hoàn thành).
+
+Khách hàng mong muốn thay đổi các bộ lọc nhanh để hoạt động theo chu kỳ tuần hoàn chỉnh (bắt đầu từ Thứ Hai và kết thúc vào Chủ Nhật của các tuần đã hoàn thành):
+* **Tuần trước**: Lọc 1 tuần gần nhất đã hoàn thành (Thứ Hai tuần trước -> Chủ Nhật tuần trước).
+  *(VD: hôm nay là 14/07/26 thì sẽ lọc tuần 06/07/2026 - 12/07/2026)*
+* **28 ngày qua**: Lọc 4 tuần gần nhất đã hoàn thành (Thứ Hai cách đây 4 tuần -> Chủ Nhật tuần trước).
+  *(VD: hôm nay là 14/07/26 thì sẽ lọc từ 15/06/2026 - 12/07/2026)*
+* **03 tháng qua**: Lọc 12 tuần gần nhất đã hoàn thành (Thứ Hai cách đây 12 tuần -> Chủ Nhật tuần trước).
+  *(VD: hôm nay là 14/07/26 thì sẽ lọc từ 20/04/2026 - 12/07/2026)*
 
 ## Các bước tái hiện
-1. Mở một cửa sổ trình duyệt ẩn danh (Private/Incognito) mới.
-2. Truy cập trực tiếp đường dẫn: `https://tiktok-video-pfm.vercel.app/dashboard` (hoặc chạy dev server local tại `http://localhost:3000/dashboard`).
-3. Quan sát kết quả: Giao diện Sidebar, Dashboard hiển thị và toàn bộ dữ liệu (GMV, Đơn hàng, Lượt xem, danh sách Video...) được hiển thị đầy đủ thay vì bị chuyển hướng về `/login`.
+1. Truy cập các trang **Dashboard**, **Thương hiệu** (Brand), hoặc **KOC / Affiliate**.
+2. Nhấp vào bộ chọn thời gian ở góc trên cùng bên phải.
+3. Chọn các tùy chọn "7 ngày qua", "28 ngày qua", hoặc "90 ngày qua" ở mục "Lọc nhanh".
+4. Quan sát dải ngày lọc được áp dụng trên thanh chọn: Ngày kết thúc luôn là ngày hiện tại (`today`), chưa được gom cụm tròn theo tuần.
 
 ## Kết quả Thực tế vs Kết quả Mong đợi
-* **Kết quả Thực tế**: Người dùng chưa đăng nhập vẫn có thể truy cập và xem được toàn bộ thông tin nhạy cảm của dashboard.
-* **Kết quả Mong đợi**: Nếu chưa đăng nhập, mọi lượt truy cập vào các đường dẫn nội bộ phải bị chặn ngay lập tức ở cấp độ Server (hoặc Client) và chuyển hướng người dùng về trang `/login`. Chỉ khi đăng nhập thành công mới được phép xem nội dung này. Ngược lại, nếu đã đăng nhập rồi mà cố truy cập `/login` thì sẽ được tự động chuyển hướng sang `/dashboard`.
+* **Kết quả Thực tế**: Các bộ lọc nhanh lấy ngày kết thúc là ngày hiện tại (`today`), không căn chỉnh theo chu kỳ dữ liệu tuần dẫn đến thiếu dữ liệu tuần hiện tại hoặc hiển thị không trọn vẹn tuần.
+* **Kết quả Mong đợi**: Các bộ lọc nhanh được cấu hình lại để tự động tìm tuần hoàn chỉnh gần nhất (kết thúc vào Chủ Nhật của tuần trước đó) và tính ngược về trước theo các khoảng 1 tuần, 4 tuần, 12 tuần bắt đầu từ Thứ Hai:
+  * "Tuần trước" thay thế cho "7 ngày qua": Lọc từ Thứ Hai tuần trước -> Chủ Nhật tuần trước.
+  * "28 ngày qua": Lọc từ Thứ Hai 4 tuần trước -> Chủ Nhật tuần trước.
+  * "03 tháng qua" thay thế cho "90 ngày qua": Lọc từ Thứ Hai 12 tuần trước -> Chủ Nhật tuần trước.
 
 ## Ngữ cảnh & Môi trường
-* **Framework**: Next.js 16.2.3 (App Router).
-* **Cơ chế xác thực**: Supabase Auth.
-* **Môi trường bị lỗi**: Cả môi trường Production (Vercel) và Local Dev.
+* **Hệ thống**: Next.js App Router, `date-fns` phiên bản `^4.1.0`.
+* **Môi trường**: Cả Local Dev và Production.
+* **Tệp tin liên quan**: `src/components/date-range-picker.tsx`.
+* **Thời gian hiện tại giả định trong ví dụ**: 14/07/2026 (Thứ Ba).
 
 ---
 
 ## Phân tích Nguyên nhân Gốc rễ (Root Cause Analysis)
 
-### 1. (ĐÃ ĐÍNH CHÍNH) Quy ước file — `proxy.ts` là ĐÚNG với Next.js 16
-> ⚠️ **Đính chính khi thực thi:** Giả định ban đầu ("file đặt sai tên `proxy.ts` nên bị bỏ qua, phải đổi thành `middleware.ts`") là **SAI** với Next.js 16.2.3.
-> Kể từ Next.js 16, quy ước đã đổi từ `middleware.ts` sang **`proxy.ts`** (export hàm `proxy`). Bản build xác nhận: dùng `middleware.ts` sẽ báo *"The middleware file convention is deprecated. Please use proxy instead"*, còn `proxy.ts` được nhận diện là `ƒ Proxy (Middleware)` và **vẫn chạy bình thường**.
->
-> Vì vậy file `src/proxy.ts` cũ **có chạy** — nguyên nhân lỗi thực sự nằm ở **mục #2 (logic thiếu chiều chặn)** và ở việc session chỉ lưu trong localStorage (mục bổ sung bên dưới), khiến proxy không đọc được cookie phiên đăng nhập.
-
-**Nguyên nhân bổ sung — Session không lưu vào cookie:** Client khởi tạo bằng `createClient` của `@supabase/supabase-js`, chỉ lưu session vào `localStorage`. Middleware/Proxy chạy ở Server không đọc được `localStorage`, nên dù có logic chặn cũng không thể biết người dùng đã đăng nhập hay chưa. Cần chuyển sang `createBrowserClient` của `@supabase/ssr` để đồng bộ session vào cookie.
-
-### 2. Logic kiểm tra Auth trong file cấu hình cũ chưa đầy đủ
-Ngay cả khi logic trong file `src/proxy.ts` được Next.js nhận dạng và kích hoạt, hàm `proxy` hiện tại chỉ có duy nhất một chiều kiểm tra:
-* Nếu người dùng **đã đăng nhập** (có cookie) mà truy cập `/login` -> chuyển hướng về `/dashboard`.
-* File **thiếu hoàn toàn** chiều ngược lại: "Nếu người dùng **chưa đăng nhập** (không có cookie) và truy cập các trang nội bộ -> chuyển hướng về `/login`".
-
-### 3. Thiếu cơ chế Client-side Auth Guard
-Ở layout chính của các trang nội bộ `src/app/(main)/layout.tsx`, component `UserProvider` từ `@/components/user-context.tsx` được sử dụng để bọc các trang con.
-Tuy nhiên, `UserProvider` chỉ quản lý trạng thái đăng nhập (`user`, `loading`) chứ không hề chứa logic chuyển hướng khi `user` bằng `null` và `loading` bằng `false`. Do đó, layout chính và các trang con vẫn render bình thường bất kể trạng thái đăng nhập.
-
-### 4. Phân quyền Database (RLS) chưa tối ưu cho bảng Metrics
-Các hàm RPC lấy dữ liệu hiển thị (ví dụ: `get_videos_with_period_metrics` và `get_videos_summary_for_period`) được định nghĩa trên Database PostgreSQL chạy dưới dạng `SECURITY INVOKER` (quyền người gọi). Nhưng bảng phụ thuộc chính `video_period_metrics` lại có RLS Policy SELECT cho phép truy cập công khai không giới hạn (`USING (true)` cho cả role `anon`):
-```sql
-CREATE POLICY "Allow public read access on video_period_metrics"
-  ON video_period_metrics FOR SELECT
-  USING (true);
+### 1. Phân tích Tệp tin `src/components/date-range-picker.tsx`
+Tệp `src/components/date-range-picker.tsx` định nghĩa mảng `presets` ở dòng 30-66. Các presets này tính toán ngày dựa trên `subDays(startOfToday(), N)` và `to` luôn là `startOfToday()`:
+```typescript
+    {
+      label: '7 ngày qua',
+      getValue: () => ({
+        from: subDays(startOfToday(), 7),
+        to: startOfToday(),
+      }),
+    },
 ```
-Điều này khiến client chưa đăng nhập (sử dụng anonymous key của Supabase) vẫn có thể truy vấn và lấy toàn bộ dữ liệu metrics thông qua RPC.
+Khi dữ liệu được upload theo chu kỳ tuần đầy đủ, việc lấy `to: startOfToday()` sẽ chứa cả tuần hiện tại (chưa kết thúc và chưa có/thiếu dữ liệu).
 
-### Sơ đồ luồng xử lý lỗi hiện tại:
+### 2. Giải pháp kỹ thuật dùng `date-fns`
+Cần thay đổi logic tính toán trong `presets` bằng cách sử dụng các hàm hỗ trợ tuần từ `date-fns` như `subWeeks`, `startOfWeek`, `endOfWeek` kết hợp với tham số `{ weekStartsOn: 1 }` (quy định Thứ Hai là ngày đầu tuần theo chuẩn Việt Nam / ISO).
+
+#### Luồng dữ liệu và Hàm gọi cũ:
 ```
-[Request: /dashboard] 
-       │
-       ├─> (Next.js bỏ qua file src/proxy.ts do sai tên)
-       │
-       ▼
-[Render Dashboard Page]
-       │
-       ├─> [Client-side Fetching] ──> (Gọi supabase.rpc với anon key)
-       │                                     │
-       │                                     ▼
-       │                              (Bảng metrics mở public SELECT = true)
-       │                                     │
-       ▼                                     ▼
-[Hiển thị đầy đủ giao diện] <─── [Nhận toàn bộ dữ liệu metrics từ Database]
+[startOfToday() (14/7/2026)] ────> [subDays(today, 28) (16/6/2026)] 
+                                         │
+                                         ▼
+                             Khoảng lọc: 16/6/2026 - 14/7/2026 (Bao gồm tuần hiện tại chưa hết)
+```
+
+#### Luồng dữ liệu và Hàm gọi mới đề xuất:
+```
+[startOfToday() (14/7/2026)]
+        │
+        ▼  (Tính lùi 1 tuần để lấy tuần hoàn thành gần nhất)
+[subWeeks(today, 1) (7/7/2026)]
+        │
+        ├─> [endOfWeek(..., { weekStartsOn: 1 })] ───> Chủ Nhật (12/7/2026) [Mốc kết thúc: TO]
+        │
+        └─> [subWeeks(today, N)] ───> [startOfWeek(..., { weekStartsOn: 1 })] ───> Thứ Hai [Mốc bắt đầu: FROM]
+                                                                                (N = 1: 6/7 | N = 4: 15/6 | N = 12: 20/4)
 ```
 
 ---
 
 ## Đề xuất Sửa lỗi (Proposed Fixes)
 
-### 📌 Phương án Khuyến nghị: Thiết lập Next.js Middleware chính thức sử dụng `@supabase/ssr` (Bảo vệ ở cấp Server)
+### 📌 Phương án Khuyến nghị: Cập nhật cấu hình presets trong `src/components/date-range-picker.tsx`
 
-Đây là phương án tối ưu và bảo mật nhất, giúp chặn truy cập trái phép ngay từ khi request gửi tới Server (trước khi render HTML và tải code JS của trang nội bộ).
+Chúng ta sẽ giữ lại tùy chọn "Hôm nay" và "Tất cả thời gian", đồng thời thay đổi/cấu hình lại 3 bộ lọc ở giữa:
 
-**Chi tiết các bước thực hiện:**
+1. **Import các hàm cần thiết từ `'date-fns'`**:
+   ```typescript
+   import { addDays, format, subDays, startOfToday, subWeeks, startOfWeek, endOfWeek } from 'date-fns';
+   ```
 
-1. **Cấu hình lại file Proxy (giữ nguyên `src/proxy.ts` — đúng quy ước Next.js 16):**
-   Viết lại `src/proxy.ts` (export hàm `proxy`), sử dụng `createServerClient` của `@supabase/ssr` để đọc/đồng bộ cookie session và xử lý chuyển hướng 2 chiều bằng `getUser()`:
-   * Nếu không có user (chưa đăng nhập) và pathname không phải `/login`: Redirect về `/login`.
-   * Nếu đã có user (đã đăng nhập) và pathname là `/login`: Redirect về `/dashboard`.
-
-2. **Cập nhật Client-side Supabase Initialization (`src/lib/supabase.ts`):**
-   Chuyển từ `createClient` của `@supabase/supabase-js` sang `createBrowserClient` của `@supabase/ssr`.
-   * **Lý do**: Để middleware trên server đọc được cookie session, client-side sau khi đăng nhập thành công bằng `signInWithPassword` cần lưu session vào cookie trình duyệt. `createBrowserClient` sẽ tự động xử lý việc đồng bộ session giữa localStorage và cookie một cách đáng tin cậy.
-
-3. **Gia cố bảo mật dữ liệu ở Database (Defense in Depth):**
-   * Sửa policy của bảng `video_period_metrics` để chỉ cho phép tài khoản đã đăng nhập đọc (`TO authenticated USING (true)` thay vì public cho tất cả).
-
-### Sơ đồ luồng hoạt động đề xuất sau khi sửa:
-```
-[Request: /dashboard]
-       │
-       ▼
-[Next.js Middleware (src/middleware.ts)]
-       │
-       ├──> [Chưa đăng nhập?] ──> Có ──> [Redirect về /login]
-       │
-       └──> [Đã đăng nhập?] ──> Có ──> [NextResponse.next()] ──> [Hiển thị Dashboard]
-```
+2. **Cấu hình lại mảng `presets`**:
+   * **Thay thế "7 ngày qua" bằng "Tuần trước"**:
+     ```typescript
+     {
+       label: 'Tuần trước',
+       getValue: () => {
+         const today = startOfToday();
+         return {
+           from: startOfWeek(subWeeks(today, 1), { weekStartsOn: 1 }),
+           to: endOfWeek(subWeeks(today, 1), { weekStartsOn: 1 }),
+         };
+       },
+     }
+     ```
+   * **Cập nhật "28 ngày qua" để hoạt động theo tuần**:
+     ```typescript
+     {
+       label: '28 ngày qua',
+       getValue: () => {
+         const today = startOfToday();
+         return {
+           from: startOfWeek(subWeeks(today, 4), { weekStartsOn: 1 }),
+           to: endOfWeek(subWeeks(today, 1), { weekStartsOn: 1 }),
+         };
+       },
+     }
+     ```
+   * **Thay thế "90 ngày qua" bằng "03 tháng qua" (12 tuần gần nhất)**:
+     ```typescript
+     {
+       label: '03 tháng qua',
+       getValue: () => {
+         const today = startOfToday();
+         return {
+           from: startOfWeek(subWeeks(today, 12), { weekStartsOn: 1 }),
+           to: endOfWeek(subWeeks(today, 1), { weekStartsOn: 1 }),
+         };
+       },
+     }
+     ```
 
 ---
 
 ## Kế hoạch Xác minh
 
-1. **Kiểm tra truy cập ẩn danh (chưa đăng nhập):**
-   * Xóa toàn bộ Cookie/Local Storage trên trình duyệt hoặc sử dụng tab ẩn danh mới.
-   * Truy cập `/dashboard`.
-   * **Kết quả mong đợi**: Hệ thống tự động chuyển hướng ngay lập tức về `/login`. Màn hình Dashboard không được phép nhấp nháy hay hiển thị bất cứ thông tin nào.
+### Kiểm thử thủ công:
+1. Chạy ứng dụng Next.js ở chế độ phát triển (`npm run dev`).
+2. Mở trình duyệt và truy cập trang `/dashboard`.
+3. Bấm chọn bộ lọc thời gian và nhấp chọn lần lượt các preset:
+   * **Tuần trước**: Kiểm tra xem dải ngày hiển thị có khớp với Thứ Hai đến Chủ Nhật tuần trước hay không.
+   * **28 ngày qua**: Kiểm tra xem dải ngày có kéo dài từ Thứ Hai cách đây 4 tuần đến Chủ Nhật tuần trước hay không.
+   * **03 tháng qua**: Kiểm tra xem dải ngày có kéo dài từ Thứ Hai cách đây 12 tuần đến Chủ Nhật tuần trước hay không.
+4. Lặp lại bước tương tự trên trang Thương hiệu (`/team/content`) và KOC / Affiliate (`/team/booking`).
 
-2. **Kiểm tra đăng nhập:**
-   * Truy cập `/login` và thực hiện đăng nhập bằng tài khoản hợp lệ.
-   * **Kết quả mong đợi**: Đăng nhập thành công và chuyển hướng mượt mà sang `/dashboard`. Số liệu hiển thị đầy đủ.
-
-3. **Kiểm tra chuyển hướng ngược khi đã đăng nhập:**
-   * Khi đang ở `/dashboard` (đã đăng nhập), truy cập trực tiếp URL `/login`.
-   * **Kết quả mong đợi**: Tự động chuyển hướng ngược lại `/dashboard`.
-
-4. **Kiểm tra đăng xuất:**
-   * Thực hiện Đăng xuất.
-   * **Kết quả mong đợi**: Phiên làm việc bị xóa ở cả client và cookie, trình duyệt chuyển ngay về `/login`. Bấm nút Back trên trình duyệt không thể quay lại trang dashboard.
+### Kiểm thử tự động / Biên dịch:
+1. Chạy lệnh `npm run build` để kiểm tra lỗi TypeScript hoặc cú pháp Next.js liên quan đến các hàm import từ `date-fns`.
 
 ---
 
 ## Kết quả Sửa lỗi (Fix Result) — ✅ THÀNH CÔNG
 
-### Các thay đổi đã áp dụng (Minimal changes)
-1. **`src/proxy.ts`** — viết lại logic dùng `createServerClient` (`@supabase/ssr`) + `getUser()`, chặn 2 chiều (chưa đăng nhập → `/login`; đã đăng nhập vào `/login` → `/dashboard`). Giữ tên file `proxy.ts` (đúng quy ước Next.js 16, không dùng `middleware.ts` đã deprecate).
-2. **`src/lib/supabase.ts`** — chuyển `createClient` → `createBrowserClient` (`@supabase/ssr`) để session đồng bộ vào cookie cho Server đọc được. Giữ nguyên biến export `supabase` nên toàn bộ import hiện có không đổi.
-3. **`supabase/migrations/harden_video_period_metrics_read.sql`** — (Defense in Depth) siết policy SELECT của `video_period_metrics` từ public `USING (true)` → `TO authenticated`.
+### Thay đổi đã áp dụng (Minimal changes)
+Chỉ sửa 1 file `src/components/date-range-picker.tsx`:
+* Thêm import `subWeeks, startOfWeek, endOfWeek` từ `date-fns` (giữ nguyên `addDays/subDays` vì preset "Tất cả thời gian" vẫn dùng).
+* Đổi 3 preset giữa sang tính theo tuần hoàn chỉnh (`weekStartsOn: 1` = Thứ Hai), kết thúc vào Chủ Nhật tuần trước:
+  * "7 ngày qua" → **"Tuần trước"** (1 tuần)
+  * **"28 ngày qua"** (4 tuần, giữ nhãn)
+  * "90 ngày qua" → **"03 tháng qua"** (12 tuần)
 
-### Kiểm thử tự động (build + reproduce script)
-* **`npm run build`**: ✅ Compiled successfully, TypeScript pass, không còn cảnh báo deprecate; proxy được nhận diện `ƒ Proxy (Middleware)`.
-* **Script tái hiện** (chạy `npm start` rồi curl khi CHƯA đăng nhập):
-
-```
-=== TEST 1: /dashboard      → status=307 redirect=/login   ✅
-=== TEST 2: /admin/upload   → status=307 redirect=/login   ✅
-=== TEST 3: /team/booking   → status=307 redirect=/login   ✅
-=== TEST 4: /login          → status=200 (no redirect)     ✅
-```
-
-→ Trước khi sửa, các trang trên trả về `200` và render dữ liệu. Sau khi sửa, mọi trang nội bộ đều bị chặn (`307 → /login`) khi chưa đăng nhập. **Lỗi đã được khắc phục.**
-
-### RLS Supabase — ✅ ĐÃ ÁP DỤNG & XÁC MINH trên project TikTok (`mrmwwlqolqsoyuxasrta`)
-Đã push migration `harden_video_period_metrics_read.sql` lên đúng project và kiểm chứng bằng cách giả lập role trực tiếp trong DB:
+### Kiểm thử tự động (script tái hiện, `today` cố định = 14/07/2026)
+Script `scratch/test-date-presets.mjs` dùng đúng công thức date-fns của component:
 
 ```
-Trước sửa:  set role anon;          → SELECT count = 70265   ❌ (anon đọc được toàn bộ)
-Sau sửa:    set role anon;          → SELECT count = 0       ✅ (đã chặn)
-            set role authenticated; → SELECT count = 70265   ✅ (app vẫn hoạt động)
+PASS  Tuần trước     = 06/07/2026 -> 12/07/2026  (kỳ vọng 06/07/2026 -> 12/07/2026)
+PASS  28 ngày qua    = 15/06/2026 -> 12/07/2026  (kỳ vọng 15/06/2026 -> 12/07/2026)
+PASS  03 tháng qua   = 20/04/2026 -> 12/07/2026  (kỳ vọng 20/04/2026 -> 12/07/2026)
+
+ALL TESTS PASSED ✅
 ```
 
-> **Phát hiện quan trọng:** Chỉ siết policy `FOR SELECT` là CHƯA đủ. Bảng còn 1 policy `FOR ALL` (public, `USING true`) — trong PostgreSQL policy `FOR ALL` cũng áp dụng cho SELECT và các policy được OR với nhau, nên anon vẫn đọc được (đã test ra 70265 rows). Đã siết **cả hai** policy (SELECT và ALL) về `TO authenticated` thì anon mới thực sự bị chặn (0 rows). Ghi (write) từ client chỉ xảy ra sau khi đăng nhập (authenticated) và API server dùng service-role key (bỏ qua RLS) nên không bị ảnh hưởng.
+Cả 3 preset khớp chính xác kỳ vọng trong báo cáo (Thứ Hai → Chủ Nhật, không còn dính tuần hiện tại chưa hoàn thành).
 
-### Lưu ý khi triển khai
-* **Đăng nhập lại 1 lần:** Người dùng đang có session cũ (lưu ở localStorage) sẽ bị đưa về `/login` ở lần truy cập đầu tiên sau khi deploy và cần đăng nhập lại 1 lần để tạo cookie session mới. Đây là hành vi mong đợi.
+### Biên dịch
+```
+✓ Compiled successfully in 17.5s
+  Finished TypeScript ...
+✓ Generating static pages (18/18)
+```
+
+Không lỗi TypeScript/build. `DateRangePicker` được dùng chung ở Dashboard, `/team/content` (Thương hiệu) và `/team/booking` (KOC/Affiliate) nên bản sửa áp dụng đồng thời cho cả 3 trang.

@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { addDays, format, subDays, startOfToday } from 'date-fns';
+import { addDays, format, subDays, startOfToday, subWeeks, startOfWeek, endOfWeek } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { Calendar as CalendarIcon, Check } from 'lucide-react';
 import { DateRange } from 'react-day-picker';
@@ -36,25 +36,34 @@ export function DateRangePicker({
       }),
     },
     {
-      label: '7 ngày qua',
-      getValue: () => ({
-        from: subDays(startOfToday(), 7),
-        to: startOfToday(),
-      }),
+      label: 'Tuần trước',
+      getValue: () => {
+        const today = startOfToday();
+        return {
+          from: startOfWeek(subWeeks(today, 1), { weekStartsOn: 1 }),
+          to: endOfWeek(subWeeks(today, 1), { weekStartsOn: 1 }),
+        };
+      },
     },
     {
       label: '28 ngày qua',
-      getValue: () => ({
-        from: subDays(startOfToday(), 28),
-        to: startOfToday(),
-      }),
+      getValue: () => {
+        const today = startOfToday();
+        return {
+          from: startOfWeek(subWeeks(today, 4), { weekStartsOn: 1 }),
+          to: endOfWeek(subWeeks(today, 1), { weekStartsOn: 1 }),
+        };
+      },
     },
     {
-      label: '90 ngày qua',
-      getValue: () => ({
-        from: subDays(startOfToday(), 90),
-        to: startOfToday(),
-      }),
+      label: '03 tháng qua',
+      getValue: () => {
+        const today = startOfToday();
+        return {
+          from: startOfWeek(subWeeks(today, 12), { weekStartsOn: 1 }),
+          to: endOfWeek(subWeeks(today, 1), { weekStartsOn: 1 }),
+        };
+      },
     },
     {
       label: 'Tất cả thời gian',
