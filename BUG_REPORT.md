@@ -154,6 +154,16 @@ CREATE POLICY "Allow public read access on video_period_metrics"
 
 → Trước khi sửa, các trang trên trả về `200` và render dữ liệu. Sau khi sửa, mọi trang nội bộ đều bị chặn (`307 → /login`) khi chưa đăng nhập. **Lỗi đã được khắc phục.**
 
+### RLS Supabase — ✅ ĐÃ ÁP DỤNG & XÁC MINH trên project TikTok (`mrmwwlqolqsoyuxasrta`)
+Đã push migration `harden_video_period_metrics_read.sql` lên đúng project và kiểm chứng bằng cách giả lập role trực tiếp trong DB:
+
+```
+Trước sửa:  set role anon;          → SELECT count = 70265   ❌ (anon đọc được toàn bộ)
+Sau sửa:    set role anon;          → SELECT count = 0       ✅ (đã chặn)
+            set role authenticated; → SELECT count = 70265   ✅ (app vẫn hoạt động)
+```
+
+> **Phát hiện quan trọng:** Chỉ siết policy `FOR SELECT` là CHƯA đủ. Bảng còn 1 policy `FOR ALL` (public, `USING true`) — trong PostgreSQL policy `FOR ALL` cũng áp dụng cho SELECT và các policy được OR với nhau, nên anon vẫn đọc được (đã test ra 70265 rows). Đã siết **cả hai** policy (SELECT và ALL) về `TO authenticated` thì anon mới thực sự bị chặn (0 rows). Ghi (write) từ client chỉ xảy ra sau khi đăng nhập (authenticated) và API server dùng service-role key (bỏ qua RLS) nên không bị ảnh hưởng.
+
 ### Lưu ý khi triển khai
 * **Đăng nhập lại 1 lần:** Người dùng đang có session cũ (lưu ở localStorage) sẽ bị đưa về `/login` ở lần truy cập đầu tiên sau khi deploy và cần đăng nhập lại 1 lần để tạo cookie session mới. Đây là hành vi mong đợi.
-* **Migration RLS chạy thủ công:** File `harden_video_period_metrics_read.sql` cần chạy trên đúng project Supabase của app (`mrmwwlqolqsoyuxasrta.supabase.co`). Kết nối MCP hiện tại chỉ truy cập được project HR khác (`pmuxcbwxjczrzeigowoi`) nên **không thể tự động push** migration này — vui lòng chạy qua Supabase SQL Editor / CLI.
