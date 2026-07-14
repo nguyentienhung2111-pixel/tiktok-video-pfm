@@ -35,6 +35,10 @@ const EMPTY_SUMMARY: VideosSummary = {
   totalOrders: 0,
   totalVideos: 0,
   totalCreators: 0,
+  totalGMVDirect: 0,
+  totalGMVIndirect: 0,
+  totalClicks: 0,
+  totalImpressions: 0,
 };
 
 export default function DashboardPage() {
@@ -103,7 +107,8 @@ export default function DashboardPage() {
     new Intl.NumberFormat('vi-VN').format(val);
 
   const scorecards = [
-    { label: 'Tổng GMV', value: formatCurrency(summary.totalGMV), change: '', up: true },
+    { label: 'GMV Tổng', value: formatCurrency(summary.totalGMV), change: '', up: true },
+    { label: 'GMV trực tiếp', value: formatCurrency(summary.totalGMVDirect), change: '', up: true },
     { label: 'Tổng đơn hàng', value: formatNumber(summary.totalOrders), change: '', up: true },
     { label: 'Tổng Video', value: formatNumber(summary.totalVideos), change: '', up: true },
     { label: 'Tổng lượt xem', value: formatNumber(summary.totalViews), change: '', up: true },
@@ -155,7 +160,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Scorecards */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5 animate-in fade-in slide-in-from-bottom-4 duration-700">
           {scorecards.map((item, i) => (
             <Card key={item.label} className={cn(
               "border-[#30363d] bg-[#161b22] relative overflow-hidden transition-all hover:scale-[1.02] hover:border-primary/50",

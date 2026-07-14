@@ -35,6 +35,10 @@ const EMPTY_SUMMARY: VideosSummary = {
   totalOrders: 0,
   totalVideos: 0,
   totalCreators: 0,
+  totalGMVDirect: 0,
+  totalGMVIndirect: 0,
+  totalClicks: 0,
+  totalImpressions: 0,
 };
 
 type TagLbRow = { group_name: string; tag_id: string; tag_name: string; total_gmv: number | string; video_count: number | string; rank_in_group: number };
@@ -187,7 +191,8 @@ export default function BookingTeamPage() {
   const formatNumber = (val: number) => new Intl.NumberFormat('vi-VN').format(val);
 
   const scorecards = [
-    { label: 'GMV từ KOC', value: formatCurrency(summary.totalGMV), change: '', up: true },
+    { label: 'GMV Tổng', value: formatCurrency(summary.totalGMV), change: '', up: true },
+    { label: 'GMV trực tiếp', value: formatCurrency(summary.totalGMVDirect), change: '', up: true },
     { label: 'Đơn hàng KOC', value: formatNumber(summary.totalOrders), change: '', up: true },
     { label: 'Số KOC đã lên clip', value: formatNumber(summary.totalCreators), change: '', up: true },
     { label: 'Tổng lượt xem KOC', value: formatNumber(summary.totalViews), change: '', up: true },
@@ -240,7 +245,7 @@ export default function BookingTeamPage() {
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5 animate-in fade-in slide-in-from-bottom-4 duration-700">
           {scorecards.map((item) => (
             <Card key={item.label} className="border-[#30363d] bg-[#161b22] hover:border-purple-500/50 transition-all">
               <CardContent className="p-6">

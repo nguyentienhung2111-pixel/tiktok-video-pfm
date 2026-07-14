@@ -38,6 +38,8 @@ export interface Video {
   new_followers: number;
   orders: number;
   gmv: number;
+  gmv_direct?: number;
+  gmv_indirect?: number;
   conversion_rate: number;
   click_to_order_rate: number;
   video_duration_sec: number;
@@ -64,8 +66,11 @@ export interface VideoPeriodMetrics {
   shares: number;
   orders: number;
   gmv: number;
+  gmv_direct: number;
+  gmv_indirect: number;
   new_followers: number;
   impressions: number;
+  product_clicks: number;
   reach: number;
   engagement: number;
   click_to_order_rate: number;

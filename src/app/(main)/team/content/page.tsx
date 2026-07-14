@@ -34,6 +34,10 @@ const EMPTY_SUMMARY: VideosSummary = {
   totalOrders: 0,
   totalVideos: 0,
   totalCreators: 0,
+  totalGMVDirect: 0,
+  totalGMVIndirect: 0,
+  totalClicks: 0,
+  totalImpressions: 0,
 };
 
 type TagLbRow = { group_name: string; tag_id: string; tag_name: string; total_gmv: number | string; video_count: number | string; rank_in_group: number };
@@ -152,11 +156,19 @@ export default function ContentTeamPage() {
   const formatCurrency = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
   const formatNumber = (val: number) => new Intl.NumberFormat('vi-VN').format(val);
 
+  const ctr = summary.totalImpressions > 0 ? (summary.totalClicks / summary.totalImpressions) * 100 : 0;
+  const cr = summary.totalClicks > 0 ? (summary.totalOrders / summary.totalClicks) * 100 : 0;
+
   const scorecards = [
-    { label: 'GMV Thương hiệu', value: formatCurrency(summary.totalGMV), change: '', up: true },
-    { label: 'Đơn hàng', value: formatNumber(summary.totalOrders), change: '', up: true },
-    { label: 'Video đã đăng', value: formatNumber(summary.totalVideos), change: '', up: true },
-    { label: 'Lượt xem', value: formatNumber(summary.totalViews), change: '', up: true },
+    { label: 'GMV Tổng', value: formatCurrency(summary.totalGMV) },
+    { label: 'GMV trực tiếp', value: formatCurrency(summary.totalGMVDirect) },
+    { label: 'Click', value: formatNumber(summary.totalClicks) },
+    { label: 'CTR (%)', value: `${ctr.toFixed(2)}%` },
+    { label: 'Đơn hàng', value: formatNumber(summary.totalOrders) },
+    { label: 'CR (%)', value: `${cr.toFixed(2)}%` },
+    { label: 'Video đã đăng', value: formatNumber(summary.totalVideos) },
+    { label: 'Lượt hiển thị', value: formatNumber(summary.totalImpressions) },
+    { label: 'Lượt xem', value: formatNumber(summary.totalViews) },
   ];
 
   const handleExport = async () => {
@@ -200,7 +212,7 @@ export default function ContentTeamPage() {
           <FilterBar filters={filters} setFilters={setFilters} onClear={() => setFilters(INITIAL_FILTERS)} />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-9 animate-in fade-in slide-in-from-bottom-4 duration-700">
           {scorecards.map((item) => (
             <Card key={item.label} className="border-[#30363d] bg-[#161b22] hover:border-emerald-500/50 transition-all">
               <CardContent className="p-6">

@@ -79,7 +79,12 @@ const COLUMN_MAPPING: Record<string, string | undefined> = {
   'Đơn đặt hàng': 'orders',
   'Số món bán ra từ video': 'items_sold',
   'Tổng giá trị hàng hóa (Video) (₫)': 'total_merchandise_value',
+  'GMV Tổng': 'gmv',
   'GMV quy ra từ video bán hàng (₫)': 'gmv',
+  'GMV trực tiếp': 'gmv_direct',
+  'GMV gián tiếp': 'gmv_indirect',
+  'GMV video (₫)': 'gmv_direct',
+  'GMV gián tiếp của video (₫)': 'gmv_indirect',
   'Doanh thu (₫)': 'gmv',
   'Doanh số (₫)': 'gmv',
   'Giá trị giao dịch': 'gmv',
@@ -100,6 +105,8 @@ const COLUMN_MAPPING: Record<string, string | undefined> = {
   'video_id': 'video_id',
   'published_at': 'published_at',
   'gmv': 'gmv',
+  'gmv_direct': 'gmv_direct',
+  'gmv_indirect': 'gmv_indirect',
   'views': 'views',
   'orders': 'orders',
 };
@@ -129,7 +136,7 @@ export function parsePeriodFromFileName(name: string): { start: string; end: str
 }
 
 const NUMERIC_FIELDS = new Set([
-  'views', 'likes', 'comments', 'shares', 'orders', 'gmv',
+  'views', 'likes', 'comments', 'shares', 'orders', 'gmv', 'gmv_direct', 'gmv_indirect',
   'new_followers', 'impressions', 'reach',
   'engagement', 'click_to_order_rate', 'items_sold',
   'total_merchandise_value', 'view_to_like_clicks', 'product_clicks',
@@ -145,8 +152,8 @@ const METADATA_FIELDS = new Set([
 
 // Fields that go into video_period_metrics table
 const METRIC_FIELDS = new Set([
-  'views', 'likes', 'comments', 'shares', 'orders', 'gmv',
-  'new_followers', 'impressions', 'reach', 'engagement',
+  'views', 'likes', 'comments', 'shares', 'orders', 'gmv', 'gmv_direct', 'gmv_indirect',
+  'new_followers', 'impressions', 'product_clicks', 'reach', 'engagement',
   'click_to_order_rate', 'items_sold',
 ]);
 
@@ -212,7 +219,7 @@ export function extractFieldsFromRaw(rawData: Record<string, unknown>): Record<s
     if (!field) continue;
 
     if (field === 'total_merchandise_value' || field === 'view_to_like_clicks' ||
-        field === 'product_clicks' || field === 'view_to_like_rate') {
+        field === 'view_to_like_rate') {
       if (field === 'total_merchandise_value') {
         const num = parseNum(value);
         if (num > 0 && !result['gmv']) {
@@ -247,6 +254,26 @@ function mapRow(
 ): { metadata: Record<string, unknown>; metrics: Record<string, unknown> } {
   const extracted = extractFieldsFromRaw(row);
 
+  // Synchronize and validate GMV metrics
+  let gmv = (extracted['gmv'] as number) || 0;
+  let gmvDirect = (extracted['gmv_direct'] as number) || 0;
+  let gmvIndirect = (extracted['gmv_indirect'] as number) || 0;
+
+  if (gmv === 0 && (gmvDirect > 0 || gmvIndirect > 0)) {
+    gmv = gmvDirect + gmvIndirect;
+  } else if (gmv > 0 && gmvDirect === 0 && gmvIndirect === 0) {
+    gmvDirect = gmv;
+    gmvIndirect = 0;
+  } else if (gmv > 0 && gmvDirect > 0 && gmvIndirect === 0) {
+    gmvIndirect = Math.max(0, gmv - gmvDirect);
+  } else if (gmv > 0 && gmvIndirect > 0 && gmvDirect === 0) {
+    gmvDirect = Math.max(0, gmv - gmvIndirect);
+  }
+
+  extracted['gmv'] = gmv;
+  extracted['gmv_direct'] = gmvDirect;
+  extracted['gmv_indirect'] = gmvIndirect;
+
   // Split into metadata and metrics
   const metadata: Record<string, unknown> = {
     source_type: sourceType,
@@ -256,8 +283,8 @@ function mapRow(
 
   const metrics: Record<string, unknown> = {
     views: 0, likes: 0, comments: 0, shares: 0,
-    orders: 0, gmv: 0, new_followers: 0, impressions: 0,
-    reach: 0, engagement: 0, click_to_order_rate: 0, items_sold: 0,
+    orders: 0, gmv: 0, gmv_direct: 0, gmv_indirect: 0, new_followers: 0, impressions: 0,
+    product_clicks: 0, reach: 0, engagement: 0, click_to_order_rate: 0, items_sold: 0,
   };
 
   for (const [field, value] of Object.entries(extracted)) {

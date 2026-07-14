@@ -28,6 +28,10 @@ export interface VideosSummary {
   totalOrders: number;
   totalVideos: number;
   totalCreators: number;
+  totalGMVDirect: number;
+  totalGMVIndirect: number;
+  totalClicks: number;
+  totalImpressions: number;
 }
 
 export type FetchVideosSummaryParams = Omit<
@@ -129,6 +133,10 @@ export async function fetchVideosSummary(
         total_orders: number | string | null;
         total_videos: number | string | null;
         total_creators: number | string | null;
+        total_gmv_direct: number | string | null;
+        total_gmv_indirect: number | string | null;
+        total_clicks: number | string | null;
+        total_impressions: number | string | null;
       }
     | undefined;
 
@@ -138,5 +146,9 @@ export async function fetchVideosSummary(
     totalOrders: Number(row?.total_orders ?? 0),
     totalVideos: Number(row?.total_videos ?? 0),
     totalCreators: Number(row?.total_creators ?? 0),
+    totalGMVDirect: Number(row?.total_gmv_direct ?? 0),
+    totalGMVIndirect: Number(row?.total_gmv_indirect ?? 0),
+    totalClicks: Number(row?.total_clicks ?? 0),
+    totalImpressions: Number(row?.total_impressions ?? 0),
   };
 }
