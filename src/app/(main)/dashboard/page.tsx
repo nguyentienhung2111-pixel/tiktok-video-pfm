@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
+import { ScorecardValue } from '@/components/ScorecardValue';
 import { Button } from '@/components/ui/button';
 import {
   TrendingUp, TrendingDown, Tv, FileDown, Loader2,
@@ -166,9 +167,9 @@ export default function DashboardPage() {
               "border-[#30363d] bg-[#161b22] relative overflow-hidden transition-all hover:scale-[1.02] hover:border-primary/50",
               i === 0 && "before:absolute before:inset-0 before:bg-gradient-to-br before:from-primary/5 before:to-transparent"
             )}>
-              <CardContent className="p-6">
+              <CardContent className="p-4 sm:p-6">
                 <p className="text-xs font-bold uppercase tracking-wider text-[#94a3b8]">{item.label}</p>
-                <p className="mt-2 text-3xl font-black text-white">{item.value}</p>
+                <ScorecardValue value={item.value} numberClassName="text-xl sm:text-2xl lg:text-3xl" />
                 {item.change && (
                   <div className="mt-2 flex items-center gap-1">
                     {item.up ? <TrendingUp className="h-3 w-3 text-emerald-500" /> : <TrendingDown className="h-3 w-3 text-red-500" />}

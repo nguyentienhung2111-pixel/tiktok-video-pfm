@@ -1,189 +1,143 @@
-# Báo cáo Lỗi: Thiếu và Sai lệch Dữ liệu GMV Trực tiếp & Gián tiếp trên Dashboard và Template Upload
+# Báo cáo Lỗi
 
 ## Trạng thái
 ĐÃ SỬA CHỮA — ✅ THÀNH CÔNG (xem "Kết quả Sửa lỗi" ở cuối)
 
-## Đính chính Kế hoạch khi thực thi (Review Notes)
-Khi rà soát thực tế code + DB, phát hiện kế hoạch/migration ban đầu có 2 lỗ hổng phải sửa thêm:
-1. **Migration bị lỗi**: `get_videos_summary_for_period` tham chiếu `m.product_clicks` nhưng bảng `video_period_metrics` **chưa có cột này** → chạy migration sẽ lỗi. Phải bổ sung `ADD COLUMN product_clicks BIGINT DEFAULT 0`.
-2. **Pipeline upload không lưu clicks**: `extractFieldsFromRaw` đang **bỏ qua** `product_clicks` và nó không nằm trong `METRIC_FIELDS` → Click/CTR/CR sẽ = 0 dù đã thêm cột & UI, và các lần upload sau cũng không lưu clicks. Phải sửa pipeline lưu `product_clicks` (file template Excel đã có sẵn cột "Lượt nhấp sản phẩm").
-3. **Backfill kỳ 22.01–21.04**: raw chỉ là tổng hợp theo ngày (không có ID video) → GMV gián tiếp chỉ **ước lượng** theo tỷ lệ, làm tăng tổng GMV (~2.9 tỷ). Đã thống nhất: backfill đầy đủ nhưng **chạy dry-run báo cáo đối chiếu trước, chờ duyệt** rồi mới ghi DB.
-
 ## Tiêu đề Lỗi
-Cấu trúc template upload dữ liệu thiếu các cột phân tách GMV trực tiếp/gián tiếp, dẫn đến thiếu hụt số liệu trong database và thiếu các Score Card phân tích hiệu suất tương ứng trên Dashboard.
+Dữ liệu trong các Score Card bị tràn viền, biến dạng hoặc bị cắt cụt (truncate/ellipsis) trên các độ phân giải màn hình khác nhau.
 
 ## Mô tả Lỗi
-1. **Thiếu cột trong template upload**: File mẫu upload dữ liệu chỉ có cột "GMV quy ra từ video bán hàng (₫)" mà thiếu đi 2 cột quan trọng là "GMV trực tiếp" và "GMV gián tiếp". Khi parse dữ liệu, hệ thống chỉ map cột này vào trường `gmv` của bảng `video_period_metrics`.
-2. **Thiếu hụt dữ liệu lịch sử**:
-   - Ở một số tuần (ví dụ kỳ `22.01 - 21.04` của kênh Thương hiệu và KOC), dữ liệu cột "GMV quy ra từ video bán hàng (₫)" trong template upload cũ thực chất chỉ được điền bằng **GMV trực tiếp** từ TikTok Seller Center. Điều này dẫn đến việc hệ thống bị thiếu hụt hoàn toàn **GMV gián tiếp** (gây lệch tổng cộng khoảng **1.3 tỷ VNĐ** ở kênh Thương hiệu và **1.59 tỷ VNĐ** ở kênh KOC/Affiliate so với báo cáo Seller Center thực tế).
-   - Ở các tuần khác, mặc dù tổng GMV đã khớp với GMV Tổng (trực tiếp + gián tiếp), dữ liệu vẫn chưa được bóc tách thành 2 trường riêng biệt trong database.
-3. **Thiếu Score Cards phân tích**:
-   - Chưa có Score Card "GMV trực tiếp" trên cả 3 trang Dashboard, Thương hiệu, và KOC / Affiliate.
-   - Trang **Thương hiệu** thiếu các Score Card quan trọng: **Click**, **CTR (%)**, **CR (%)**, **Lượt hiển thị** và thứ tự hiển thị các Score Card chưa đúng chuẩn yêu cầu.
+Các thẻ Score Card (thẻ hiển thị chỉ số tổng hợp) trên 3 trang (Dashboard Tổng quan, Hiệu suất Thương hiệu, và KOC / Affiliate) sử dụng kích thước chữ cố định quá lớn (`text-3xl font-black`) kết hợp với padding mặc định lớn (`p-6`). 
+- Khi số liệu đạt hàng tỷ trở lên (ví dụ: `12.577.287.263 đ` - dài 17 ký tự), phần đuôi tiền tệ (`đ` hoặc `₫`) bị đẩy xuống dòng hoặc bị cắt cụt/tràn viền do không đủ chiều rộng.
+- Đặc biệt tại trang **Hiệu suất Thương hiệu** (`/team/content`), 9 thẻ Score Card được dàn trên cùng một hàng ngang ở độ phân giải máy tính (`lg:grid-cols-9`), làm chiều rộng mỗi thẻ bị thu hẹp cực hạn (chỉ khoảng ~110px), khiến toàn bộ các số liệu lớn bị biến thành dạng dấu ba chấm `...` (ví dụ `5.429.60...`), hoàn toàn không thể đọc được thông tin.
 
 ## Các bước tái hiện
-1. Đi tới trang **Upload dữ liệu** (`/admin/upload`) và tải xuống file mẫu `TikTok_Upload_Template.xlsx`. Chỉ thấy cột "GMV quy ra từ video bán hàng (₫)".
-2. Kiểm tra schema bảng `video_period_metrics` trong Supabase: không có các trường `gmv_direct` và `gmv_indirect`.
-3. Kiểm tra file `src/app/(main)/team/content/page.tsx` (Thương hiệu): chỉ có 4 Score Card mặc định (GMV Thương hiệu, Đơn hàng, Video đã đăng, Lượt xem), thiếu các chỉ số Click, CTR, CR, Lượt hiển thị.
-4. Chạy đối chiếu dữ liệu upload lịch sử (`Brand` & `Aff` folders) với dữ liệu thô xuất trực tiếp từ TikTok Seller Center (`Brand (raw tiktok)` & `Aff (raw tiktok)` folders): phát hiện tổng GMV của một số tuần bị lệch lớn (chỉ bằng GMV trực tiếp của raw data).
+1. Truy cập vào Dashboard chính (`/dashboard`) hoặc trang KOC (`/team/booking`) với màn hình trung bình hoặc nhỏ. Quan sát phần đuôi đơn vị `đ` ở các ô GMV bị cắt một phần hoặc nhảy dòng.
+2. Truy cập vào trang Thương hiệu (`/team/content`) trên màn hình laptop/PC thông thường (độ phân giải ~1366x768 hoặc 1440x900). 
+3. Quan sát các Score Card: Các ô GMV Tổng, GMV trực tiếp, Lượt hiển thị, Lượt xem bị rút gọn bằng dấu ba chấm (`...`) như `5.429.60...` do không đủ chiều rộng hiển thị.
 
 ## Kết quả Thực tế vs Kết quả Mong đợi
 
-### Kết quả Thực tế:
-- Database chỉ lưu trữ một trường `gmv` chung.
-- Dữ liệu lịch sử bị thiếu hụt nghiêm trọng phần GMV gián tiếp ở một số kỳ dài.
-- Dashboard chỉ hiển thị GMV chung, không hỗ trợ bóc tách GMV trực tiếp để đánh giá chính xác hiệu quả video.
-- Trang Thương hiệu thiếu các chỉ số phễu chuyển đổi (Click, CTR, CR, Lượt hiển thị).
+### Kết quả Thực tế
+- Font chữ số liệu quá lớn (`text-3xl`), padding thẻ rộng (`p-6`), đơn vị tiền tệ (`đ` / `₫`) dính liền với số bằng khoảng trắng không ngắt dòng (non-breaking space) làm cả cụm văn bản bị tràn viền hoặc cắt cụt.
+- Layout 9 cột (`lg:grid-cols-9`) ép tất cả 9 thẻ hiển thị trên 1 hàng ngang kể cả ở màn hình desktop cỡ nhỏ và trung bình, gây sụt giảm nghiêm trọng diện tích hiển thị của mỗi thẻ.
 
-### Kết quả Mong đợi:
-- Template upload và database lưu trữ đầy đủ 3 trường: **GMV Tổng**, **GMV trực tiếp**, và **GMV gián tiếp**.
-- Dữ liệu lịch sử được bổ sung, khớp hoàn toàn với số liệu báo cáo thô của Seller Center.
-- Cả 3 trang Dashboard hiển thị thêm Score Card **GMV trực tiếp**.
-- Trang Thương hiệu hiển thị trọn vẹn 9 Score Card với thứ tự từ trái qua phải:
-  `GMV Tổng` ➔ `GMV trực tiếp` ➔ `Click` ➔ `CTR (%)` ➔ `Đơn hàng` ➔ `CR (%)` ➔ `Video đã đăng` ➔ `Lượt hiển thị` ➔ `Lượt xem`
-  *(Trong đó: CTR = Click / Lượt hiển thị * 100; CR = Đơn hàng / Click * 100)*
+### Kết quả Mong đợi
+- Số liệu hiển thị đầy đủ, không bị cắt cụt hoặc biến thành dấu ba chấm trên mọi độ phân giải màn hình.
+- Đơn vị tiền tệ `đ` được hiển thị tinh tế (cỡ chữ nhỏ hơn, nằm sát cạnh số) để tiết kiệm không gian và tạo cảm giác premium.
+- Bố cục lưới (Grid Layout) co giãn thông minh tùy theo số lượng thẻ, tự động xuống dòng trên màn hình cỡ trung thay vì ép toàn bộ trên một dòng.
 
 ## Ngữ cảnh & Môi trường
-- **Môi trường**: Next.js App Router, Supabase Database, XLSX processing.
-- **Dữ liệu thô**: Nằm trong thư mục `docs/Data/Brand (raw tiktok)` và `docs/Data/Aff (raw tiktok)`.
-  - GMV trực tiếp là cột `"GMV video (₫)"`
-  - GMV gián tiếp là cột `"GMV gián tiếp của video (₫)"`
-- **File mẫu**: Nằm trong `docs/Data/Brand` và `docs/Data/Aff` (được dùng to upload lên web trước đây).
+- **Môi trường**: Next.js App Router (React), Tailwind CSS, TypeScript.
+- **Các file bị ảnh hưởng**:
+  1. `src/app/(main)/dashboard/page.tsx` (Trang tổng quan - 5 Score Cards)
+  2. `src/app/(main)/team/booking/page.tsx` (Trang KOC - 5 Score Cards)
+  3. `src/app/(main)/team/content/page.tsx` (Trang Thương hiệu - 9 Score Cards)
 
 ---
 
 ## Phân tích Nguyên nhân Gốc rễ (Root Cause Analysis)
 
-### 1. Phân tích Dữ liệu Thô (Raw TikTok Exports)
-Qua việc quét cấu trúc các file trong thư mục raw tiktok:
-- Các file raw gần đây (ví dụ tuần `22.06.2026 - 28.06.2026` trở đi) là các file báo cáo chi tiết theo từng video (dung lượng lớn >200KB), có chứa cột **"ID video"** và đầy đủ các cột **"GMV video (₫)"** (trực tiếp) và **"GMV gián tiếp của video (₫)"** (gián tiếp).
-- Các file raw trước đây (ví dụ tuần `01.06.26_07.06.26` trở về trước) chỉ là các file báo cáo tổng hợp theo ngày (dung lượng nhỏ ~7.4KB), không chứa danh sách video chi tiết mà chỉ có tổng số liệu theo ngày của cả tuần.
-
-### 2. Sự lệch số liệu của file Upload cũ
-Khi người dùng chuẩn bị các file upload template cho các tuần cũ:
-- Do file raw ban đầu chỉ có số liệu ngày, người dùng đã lấy file chi tiết video từ nguồn khác (có thể là trang phân tích video không hiển thị GMV gián tiếp) dẫn đến cột "GMV quy ra từ video bán hàng (₫)" bị điền thiếu (chỉ điền GMV trực tiếp).
-- Đối với các tuần có file raw chi tiết video, việc map dữ liệu ban đầu bỏ qua cột GMV gián tiếp.
-
-### 3. Sơ đồ Luồng Dữ liệu & Đề xuất Cải tiến
+### 1. Phân tích Kích thước & CSS của Score Card
+Mỗi thẻ Score Card được cấu trúc như sau:
 ```
-[File Excel Upload Template Mới]
-   │
-   ├─► GMV Tổng (Đổi tên cột cũ) ──► gmv (DB)
-   ├─► GMV trực tiếp (Cột mới) ────► gmv_direct (DB)
-   └─► GMV gián tiếp (Cột mới) ───► gmv_indirect (DB)
+┌────────────────────────────────────────┐
+│ GMV TỔNG                               │  <-- text-xs uppercase tracking-wider
+│                                        │
+│ 12.577.287.263 đ                       │  <-- text-3xl font-black (30px)
+└────────────────────────────────────────┘
+```
+- Khi thẻ nằm trong hệ thống lưới 5 cột (`lg:grid-cols-5`) hoặc 9 cột (`lg:grid-cols-9`):
+  - Chiều rộng của khu vực nội dung (Content Width) = `Card Width` - `2 * Horizontal Padding (p-6 = 48px)`.
+  - Với màn hình `1200px` (sau khi trừ Menu Sidebar `240px` còn `960px` nội dung):
+    - **Lưới 5 cột**: Chiều rộng mỗi thẻ ~192px ➔ Chiều rộng nội dung thực tế ~144px. Cụm chữ `12.577.287.263 đ` ở cỡ chữ `30px` cần khoảng `170px` để hiển thị ➔ **Bị tràn / nhảy dòng / cắt chữ đ**.
+    - **Lưới 9 cột**: Chiều rộng mỗi thẻ ~106px ➔ Chiều rộng nội dung thực tế ~58px. Số liệu GMV hoàn toàn không thể hiển thị và bị ép rút gọn bằng dấu ba chấm `...` (do CSS parent hoặc trình duyệt xử lý tràn).
 
-[Hàm RPC: get_videos_summary_for_period]
-   │
-   ├─► Sum(gmv) ─────────► total_gmv
-   ├─► Sum(gmv_direct) ──► total_gmv_direct
-   ├─► Sum(gmv_indirect) ► total_gmv_indirect
-   ├─► Sum(product_clicks) ► total_clicks (Click)
-   └─► Sum(impressions) ─► total_impressions (Hiển thị)
+### 2. Sơ đồ Luồng CSS gây lỗi (Ellipsis/Overflow Flow)
+```
+[Dữ liệu GMV lớn]
+       │
+       ▼ (Định dạng sang tiền tệ Việt Nam: "12.577.287.263 đ")
+[Chuỗi giá trị dài 17 ký tự]
+       │
+       ▼ (Đưa vào thẻ <CardContent className="p-6">)
+[Nội dung thực tế bị bóp hẹp còn ~58px - 144px]
+       │
+       ▼ (Áp dụng class "text-3xl font-black")
+[Chữ quá lớn so với hộp chứa] ──► Không có khoảng trống ngắt dòng ──► Tràn viền / Ellipsis (...)
 ```
 
 ---
 
 ## Đề xuất Sửa lỗi (Proposed Fixes)
 
-### 1. Cập nhật Database Schema (Supabase)
-Tạo file migration SQL mới để:
-1. Thêm cột `gmv_direct NUMERIC DEFAULT 0` và `gmv_indirect NUMERIC DEFAULT 0` vào bảng `video_period_metrics`.
-2. Cập nhật View `video_with_metrics` để SELECT và SUM thêm 2 trường này.
-3. Cập nhật hàm RPC `get_videos_with_period_metrics` để trả về thêm 2 trường này.
-4. Cập nhật hàm RPC `get_videos_summary_for_period` để trả về thêm các trường:
-   - `total_gmv_direct NUMERIC`
-   - `total_gmv_indirect NUMERIC`
-   - `total_clicks BIGINT` (SUM của `product_clicks`)
-   - `total_impressions BIGINT` (SUM của `impressions`)
+### Phương án 1: Tối ưu hóa phản hồi (Responsive Styling), Tách đuôi đơn vị tiền tệ & Thu nhỏ padding (KHUYẾN NGHỊ)
+Phương án này giải quyết triệt để lỗi hiển thị bằng cách kết hợp 3 kỹ thuật:
+1. **Thu nhỏ Padding của CardContent**:
+   - Đối với lưới 5 cột: Giảm xuống `p-4 pt-4 sm:p-6 sm:pt-6` (tăng thêm 16px chiều rộng hiển thị trên mobile/tablet).
+   - Đối với lưới 9 cột: Giảm xuống `p-3 pt-3 sm:p-4 sm:pt-4` (tăng thêm 24px chiều rộng hiển thị).
+2. **Cập nhật Grid Layout co giãn động**:
+   - Trên trang Thương hiệu (`team/content`), đổi `lg:grid-cols-9` thành `lg:grid-cols-5 xl:grid-cols-9`. 
+   - Điều này giúp trên màn hình cỡ trung (dưới 1280px), các thẻ tự động xếp thành 2 hàng (5 cột và 4 cột) thay vì bị ép trên 1 hàng, giúp tăng gấp đôi diện tích hiển thị.
+3. **Sử dụng Helper Render thông minh (`renderScorecardValue`)**:
+   - Tách chuỗi số và ký hiệu đơn vị tiền tệ (`đ` hoặc `₫`).
+   - Hiển thị số bằng cỡ chữ co giãn động (Responsive Font Size):
+     - Lưới 5 cột: `text-xl sm:text-2xl lg:text-3xl`
+     - Lưới 9 cột: `text-lg sm:text-xl xl:text-2xl`
+   - Hiển thị ký hiệu `đ` bằng cỡ chữ nhỏ hơn (`text-xs` hoặc `text-sm`) đặt cạnh số bằng flexbox (`align-baseline`), giúp tiết kiệm diện tích tối đa và tạo điểm nhấn thiết kế hiện đại.
+   - Thêm `break-all` để trong trường hợp màn hình quá nhỏ, số liệu vẫn tự ngắt dòng xuống dưới thay vì bị biến thành dấu ba chấm.
 
-### 2. Cập nhật Cấu hình Frontend & Logic Upload
-1. **Typescript**: Cập nhật `src/types/index.ts` để bổ sung `gmv_direct` và `gmv_indirect` vào kiểu `Video` và `VideoPeriodMetrics`. Thêm các trường tương ứng vào interface `VideosSummary` trong `src/lib/queries.ts`.
-2. **Template Mẫu**: Sửa hàm `downloadTemplate` trong `src/app/(main)/admin/upload/page.tsx`:
-   - Đổi `'GMV quy ra từ video bán hàng (₫)'` ➔ `'GMV Tổng'`
-   - Thêm `'GMV trực tiếp'`, `'GMV gián tiếp'`
-3. **Upload mapping**: Cập nhật `src/components/admin/UploadForm.tsx`:
-   - Bổ sung mapping cột:
-     - `'GMV Tổng': 'gmv'`
-     - `'GMV trực tiếp': 'gmv_direct'`
-     - `'GMV gián tiếp': 'gmv_indirect'`
-     - `'GMV video (₫)': 'gmv_direct'`
-     - `'GMV gián tiếp của video (₫)': 'gmv_indirect'`
-   - Đưa `gmv_direct` và `gmv_indirect` vào danh sách trường số học (`NUMERIC_FIELDS`) và trường metrics (`METRIC_FIELDS`) để lưu và cộng dồn khi trùng ID.
-4. **Queries**: Cập nhật `fetchVideosSummary` trong `src/lib/queries.ts` để đọc và trả về 4 trường mới từ RPC.
+#### Sơ đồ Giao diện đề xuất (Sau khi sửa):
+```
+┌────────────────────────────────────────┐
+│ GMV TỔNG                               │  <-- text-xs text-[#94a3b8]
+│                                        │
+│ 12.577.287.263 đ                       │  <-- Số: text-2xl font-black / đ: text-sm font-bold
+└────────────────────────────────────────┘
+```
 
-### 3. Viết Script Bổ sung Dữ liệu Lịch sử (Backfill Script)
-Viết script NodeJS `scratch/backfill_excel_and_db.js` để tự động hóa:
-- **Xử lý File Excel**:
-  - Quét từng cặp file template và file raw tương ứng theo tuần.
-  - **Với tuần có file raw chi tiết**: Khớp theo `ID video`. Điền `GMV trực tiếp` = cột `"GMV video (₫)"`, `GMV gián tiếp` = cột `"GMV gián tiếp của video (₫)"`, `GMV Tổng` = trực tiếp + gián tiếp.
-  - **Với tuần chỉ có file raw tổng hợp ngày (file nhỏ)**:
-    - Tính tỷ lệ trực tiếp trên tổng từ file raw ngày: `r = sum_direct_raw / sum_total_raw`.
-    - Duyệt từng dòng video trong template:
-      - Nếu tuần đó file template cũ đã khớp với tổng GMV (bao gồm gián tiếp):
-        `GMV trực tiếp = GMV cũ * r`
-        `GMV gián tiếp = GMV cũ * (1 - r)`
-        `GMV Tổng = GMV cũ`
-      - Nếu tuần đó file template cũ bị lệch (chỉ bằng GMV trực tiếp):
-        `GMV trực tiếp = GMV cũ`
-        `GMV gián tiếp = GMV cũ * (sum_indirect_raw / sum_direct_raw)`
-        `GMV Tổng = GMV trực tiếp + GMV gián tiếp` (Khôi phục phần dữ liệu gián tiếp bị mất).
-    - Lưu lại file Excel template với cấu trúc cột mới.
-- **Xử lý Database**:
-  - Script sẽ đọc các file template đã bổ sung ở trên để upsert trực tiếp vào database Supabase, đảm bảo dữ liệu lịch sử trong DB hoàn toàn sạch và khớp với Excel thô.
-
-### 4. Cập nhật Giao diện (UI) Dashboard
-1. **Trang Dashboard** (`/dashboard`):
-   - Đổi nhãn `"Tổng GMV"` ➔ `"GMV Tổng"`.
-   - Thêm Score Card `"GMV trực tiếp"` bên cạnh.
-2. **Trang KOC / Affiliate** (`/team/booking`):
-   - Đổi nhãn `"GMV từ KOC"` ➔ `"GMV Tổng"`.
-   - Thêm Score Card `"GMV trực tiếp"` bên cạnh.
-3. **Trang Thương hiệu** (`/team/content`):
-   - Thay đổi danh sách `scorecards` để hiển thị đầy đủ 9 chỉ số.
-   - Tính toán chỉ số CTR (%) và CR (%) trực tiếp từ API summary:
-     - `CTR (%) = Click / Lượt hiển thị * 100` (nếu lượt hiển thị > 0, ngược lại = 0).
-     - `CR (%) = Đơn hàng / Click * 100` (nếu click > 0, ngược lại = 0).
-   - Thiết lập CSS grid hiển thị 9 Score Card một cách cân đối và premium (ví dụ layout `grid-cols-2 md:grid-cols-3 lg:grid-cols-5` để dàn trang đẹp mắt).
+### Phương án 2: Chuyển đổi định dạng số sang dạng rút gọn (K, M, B)
+- Chuyển đổi các số lớn thành dạng rút gọn như `12.57 B` hoặc `12.57 Tỷ`.
+- **Nhược điểm**: Người dùng doanh nghiệp (đặc biệt trong kế toán, đối soát video TikTok) thường yêu cầu nhìn thấy con số chính xác tuyệt đối đến từng đơn vị đồng thay vì con số làm tròn.
 
 ---
 
 ## Kế hoạch Xác minh
 
-### 1. Xác minh Dữ liệu & Script
-- Chạy script backfill trên local và kiểm tra log xem số liệu tổng cộng của file template sau khi sửa đổi có khớp 100% với file raw tương ứng hay không.
-- Kiểm tra dữ liệu trong bảng `video_period_metrics` sau khi chạy script để chắc chắn các trường `gmv_direct` và `gmv_indirect` đã được điền đầy đủ và đúng đắn.
+### 1. Kiểm tra thủ công (Manual Verification)
+- Khởi chạy local server ở chế độ dev.
+- Truy cập lần lượt cả 3 trang: Dashboard (`/dashboard`), Thương hiệu (`/team/content`), và KOC (`/team/booking`).
+- Co giãn trình duyệt (Responsive Test) ở các mốc chiều rộng màn hình:
+  - Mobile (375px - 425px)
+  - Tablet (768px - 1024px)
+  - Laptop (1366px - 1440px)
+  - Desktop lớn (1920px)
+- Xác nhận không còn thẻ nào bị dấu ba chấm (`...`) hoặc chữ `đ` bị mất/che khuất.
 
-### 2. Xác minh UI & Trải nghiệm
-- Khởi động local server và kiểm tra trực quan giao diện các Dashboard.
-- Xác nhận các Score Card hiển thị đúng giá trị, định dạng tiền tệ (VND) và số lượng.
-- Xác nhận công thức tính toán CTR (%) và CR (%) hoạt động chuẩn xác.
-- Tải file mẫu từ trang `/admin/upload` và mở xem để kiểm tra cấu trúc cột mới.
-- Chạy `npm run build` để kiểm tra toàn bộ lỗi TypeScript hoặc compile tĩnh trước khi triển khai.
+### 2. Xác minh kỹ thuật (Technical Verification)
+- Chạy `npm run build` để kiểm tra lỗi biên dịch TypeScript.
 
 ---
 
 ## Kết quả Sửa lỗi (Fix Result) — ✅ THÀNH CÔNG
 
-### A. Schema + Code + UI (đã sửa 2 lỗ hổng của kế hoạch)
-- **Migration** `add_gmv_direct_indirect_columns.sql`: thêm `gmv_direct`, `gmv_indirect`, **và `product_clicks`** (cột này thiếu trong kế hoạch gốc → migration sẽ lỗi nếu không thêm); DROP+CREATE lại view `video_with_metrics` (vì cột mới chèn giữa) và DROP+CREATE lại 2 RPC (vì đổi return type). Đã apply lên Supabase project `mrmwwlqolqsoyuxasrta`, RPC chạy OK.
-- **Pipeline upload** (`UploadForm.tsx`): bỏ `product_clicks` khỏi danh sách skip + thêm vào `METRIC_FIELDS` + khởi tạo metrics → từ nay clicks được lưu (trước đây bị bỏ qua hoàn toàn). Bổ sung `product_clicks` vào type `VideoPeriodMetrics`.
-- **Frontend** (types, queries, template, 3 trang): giữ nguyên các thay đổi đã có — GMV Tổng + GMV trực tiếp trên 3 trang; trang Thương hiệu đủ 9 Score Card (GMV Tổng, GMV trực tiếp, Click, CTR%, Đơn hàng, CR%, Video đã đăng, Lượt hiển thị, Lượt xem).
-- **Build**: `npm run build` ✓ Compiled + TypeScript pass, 18/18 trang.
+### Thay đổi đã áp dụng (Minimal changes)
+Theo Phương án 1 (khuyến nghị), dùng chung 1 component nhỏ thay vì lặp code:
+1. **Component mới** `src/components/ScorecardValue.tsx`: tách phần số và ký hiệu tiền tệ (`₫`/`đ`), render số bằng cỡ chữ co giãn (prop `numberClassName`), ký hiệu `₫` cỡ `text-sm` đặt cạnh số (`flex items-baseline`), thêm `break-all` để số dài tự ngắt dòng thay vì tràn/`...`. Chuỗi không phải tiền tệ (số thường, `%`) render nguyên vẹn.
+2. **3 trang** (dashboard, team/booking, team/content): thay `<p class="text-3xl ...">{item.value}</p>` bằng `<ScorecardValue .../>`; thu nhỏ padding responsive (`p-6`→`p-4 sm:p-6` cho lưới 5 cột; `p-6`→`p-3 sm:p-4` cho lưới 9 cột).
+3. **Grid co giãn** trang Thương hiệu: `lg:grid-cols-9` → `lg:grid-cols-5 xl:grid-cols-9` (màn hình <1280px xếp 2 hàng thay vì ép 9 thẻ 1 hàng).
+   - Cỡ số: 5 cột `text-xl sm:text-2xl lg:text-3xl`; 9 cột `text-lg sm:text-xl xl:text-2xl`.
 
-### B. Backfill dữ liệu lịch sử (dry-run → duyệt → ghi)
-Script `scratch/backfill_excel_and_db.mjs` đối chiếu từng cặp template↔raw, phân loại tự động và tính tách GMV; clicks lấy trực tiếp từ template (chính xác). Đã chạy dry-run, người dùng duyệt, rồi ghi qua bảng staging + `UPDATE ... FROM` (chỉ cập nhật dòng đã tồn tại — không tạo orphan). Cập nhật **70.207/70.265** dòng (99,92%).
-
-**Kết quả cuối trên DB (RPC summary):**
+### Kiểm thử tự động
+- **Script tách giá trị** `scratch/test-scorecard-value.mjs` (mô phỏng regex của component):
 ```
-                total_gmv       gmv_direct      gmv_indirect    clicks     impressions
-ALL          12.577.287.263   8.302.064.917   4.275.222.346   4.642.713   73.408.967   (direct+indirect = total ✓)
-Brand         5.429.608.662   3.265.595.319   2.159.706.543   1.837.913   31.225.544
-KOC           7.147.678.601   5.015.902.240   2.115.515.803   2.804.800   42.183.423
-Brand 22.01-21.04   3.475.165.358   2.117.671.890   1.353.186.668   (khôi phục +1,353 tỷ gián tiếp ✓)
-KOC   22.01-21.04   4.902.534.297   3.457.268.307   1.429.005.432   (khôi phục +1,429 tỷ gián tiếp ✓)
+PASS  "12.577.287.263 ₫" -> num "12.577.287.263" unit "₫"
+PASS  "0 ₫"              -> num "0"              unit "₫"
+PASS  "4.642.713"        -> num "4.642.713"      unit ""
+PASS  "12.34%"           -> num "12.34%"         unit ""
+PASS  "0.00%"            -> num "0.00%"          unit ""
+ALL PASS ✅
 ```
-- Tổng GMV toàn hệ thống: 9.780.819.530 → **12.577.287.263** (khôi phục ~2,78 tỷ GMV gián tiếp bị thiếu ở kỳ 22.01–21.04, đúng như báo cáo ~1,3 tỷ Brand + ~1,59 tỷ KOC — số thực đo được 1,353 + 1,429 tỷ).
-- `product_clicks` từ 0 → 4,64 triệu (backfill từ template, phục vụ Click/CTR/CR).
-- `impressions` giữ nguyên 73,4 triệu (không đổi).
+- **Build**: `✓ Compiled successfully`, TypeScript pass, 18/18 trang — không lỗi.
 
-**Lưu ý:** 58 dòng DB (0,08%) không có trong template hiện tại → giữ `gmv` cũ và gán `gmv_direct = gmv` (coi như 100% trực tiếp) để `direct + indirect` luôn khớp `total`. Đã xác minh `sum_split = total_gmv` tuyệt đối.
+→ Số tiền lớn (17 ký tự) không còn bị cắt `...` hay mất đuôi `₫`: ký hiệu tách nhỏ, số co giãn theo màn hình và ngắt dòng khi cần; trang Thương hiệu 9 thẻ tự xuống 2 hàng ở màn hình cỡ trung.

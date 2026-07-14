@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import type { PostgrestError } from '@supabase/supabase-js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ScorecardValue } from '@/components/ScorecardValue';
 import { Button } from '@/components/ui/button';
 import { TrendingUp, TrendingDown, UserCheck, FileDown, Loader2, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -248,9 +249,9 @@ export default function BookingTeamPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5 animate-in fade-in slide-in-from-bottom-4 duration-700">
           {scorecards.map((item) => (
             <Card key={item.label} className="border-[#30363d] bg-[#161b22] hover:border-purple-500/50 transition-all">
-              <CardContent className="p-6">
+              <CardContent className="p-4 sm:p-6">
                 <p className="text-xs font-bold uppercase tracking-wider text-[#94a3b8]">{item.label}</p>
-                <p className="mt-2 text-3xl font-black text-white">{item.value}</p>
+                <ScorecardValue value={item.value} numberClassName="text-xl sm:text-2xl lg:text-3xl" />
               </CardContent>
             </Card>
           ))}

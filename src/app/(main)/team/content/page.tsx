@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ScorecardValue } from '@/components/ScorecardValue';
 import { Button } from '@/components/ui/button';
 import { TrendingUp, TrendingDown, Tv, FileDown, Loader2, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -212,12 +213,12 @@ export default function ContentTeamPage() {
           <FilterBar filters={filters} setFilters={setFilters} onClear={() => setFilters(INITIAL_FILTERS)} />
         </div>
 
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-9 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 animate-in fade-in slide-in-from-bottom-4 duration-700">
           {scorecards.map((item) => (
             <Card key={item.label} className="border-[#30363d] bg-[#161b22] hover:border-emerald-500/50 transition-all">
-              <CardContent className="p-6">
+              <CardContent className="p-3 sm:p-4">
                 <p className="text-xs font-bold uppercase tracking-wider text-[#94a3b8]">{item.label}</p>
-                <p className="mt-2 text-3xl font-black text-white">{item.value}</p>
+                <ScorecardValue value={item.value} numberClassName="text-lg sm:text-xl xl:text-2xl" />
               </CardContent>
             </Card>
           ))}
