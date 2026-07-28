@@ -1,120 +1,175 @@
 # Báo cáo Lỗi
 
 ## Trạng thái
-ĐÃ SỬA CHỮA — ✅ THÀNH CÔNG (xem "Kết quả Sửa lỗi" ở cuối)
+ĐÃ SỬA XONG — Kết quả kiểm thử: **Thành công** (xem mục "Kết quả Kiểm thử" ở cuối).
 
 ## Tiêu đề Lỗi
-Số liệu trong Score Card bị xuống dòng giữa chừng (break-all) gây mất thẩm mỹ, thay vì dàn đều các block (cards) thành nhiều dòng khác nhau để tăng diện tích hiển thị.
+Màn hình đăng nhập thiếu tính năng "Quên mật khẩu" và chưa có tích hợp dịch vụ gửi email tự động (Resend) để cấp lại mật khẩu mới cho người dùng.
 
 ## Mô tả Lỗi
-Hiện tại, để hiển thị đầy đủ số liệu tiền tệ dài hàng chục tỷ (ví dụ: `12.577.287.263 đ`), hệ thống đang áp dụng thuộc tính `break-all` trên phần tử hiển thị. Điều này khiến số liệu bị tự động ngắt dòng ở những vị trí ngẫu nhiên (ví dụ: `12.577.287.2` ở dòng một, `63` ở dòng hai trong cùng một ô).
-Cách ngắt dòng này làm giao diện bị rối mắt, mất tính chuyên nghiệp của số liệu tài chính.
-Mong muốn của người dùng là:
-- Dữ liệu số/tiền tệ bên trong block **phải hiển thị trên một dòng duy nhất (không ngắt dòng)**.
-- Thay vào đó, tăng không gian hiển thị bằng cách **phân bổ các thẻ Score Card thành nhiều hàng (thêm dòng các block)** trên giao diện để mở rộng chiều rộng của mỗi block.
+Hiện tại trên trang Đăng nhập (`/login`), người dùng chỉ có tùy chọn nhập Email và Mật khẩu để đăng nhập. Nếu người dùng quên mật khẩu, hệ thống chưa cung cấp cơ chế khôi phục hay cấp lại mật khẩu.
+
+Nhu cầu bổ sung tính năng:
+- Thêm liên kết / nút "Quên mật khẩu?" tại màn hình đăng nhập.
+- Khi bấm vào sẽ hiển thị form/modal yêu cầu nhập email đăng nhập.
+- Hệ thống kiểm tra xem email có tồn tại và đang hoạt động trong cơ sở dữ liệu (`profiles` / Supabase Auth) hay không.
+- Nếu đúng email có trong hệ thống, tự động sinh mật khẩu mới, cập nhật mật khẩu mới vào tài khoản trong Supabase Auth, và gửi email tự động chứa mật khẩu mới về hộp thư người dùng bằng dịch vụ Resend thông qua domain `trangsucdecoco.vn`.
 
 ## Các bước tái hiện
-1. Truy cập trang Dashboard Tổng quan (`/dashboard`) hoặc trang KOC (`/team/booking`).
-2. Quan sát các Score Card có giá trị lớn (hàng tỷ): Số liệu bị ngắt dòng nham nhở như `12.577.287.2` và `63`.
-3. Truy cập trang Thương hiệu (`/team/content`): Quan sát 9 block bị ép hiển thị, chữ bị ngắt thành nhiều dòng nhỏ vụn.
+1. Truy cập trang Đăng nhập tại đường dẫn `/login`.
+2. Quan sát giao diện: Chỉ có ô nhập Email, Mật khẩu và nút "Đăng nhập", hoàn toàn chưa có liên kết hay nút "Quên mật khẩu?".
+3. Khi người dùng quên mật khẩu: Không có cách nào tự cấp lại mật khẩu mà phải nhờ quản trị viên reset thủ công trong trang Quản lý tài khoản.
 
 ## Kết quả Thực tế vs Kết quả Mong đợi
 
 ### Kết quả Thực tế
-- Thuộc tính `break-all` làm các con số bị bẻ đôi sang dòng mới.
-- Layout của các block quá nhiều cột trên một hàng (5 cột ở trang Dashboard/KOC, 9 cột hoặc 5 cột ở trang Thương hiệu), làm mỗi block bị hẹp chiều ngang.
+- Chưa có giao diện "Quên mật khẩu" tại `/login`.
+- Chưa có API backend tiếp nhận yêu cầu reset password, tự động tạo mật khẩu ngẫu nhiên và gửi email.
+- Thư viện `resend` chưa được cài đặt trong `package.json`.
+- Chức năng gửi mail chưa được tích hợp với domain `trangsucdecoco.vn`.
 
 ### Kết quả Mong đợi
-- Các con số và đơn vị tiền tệ được giữ nguyên vẹn trên một dòng (`whitespace-nowrap`).
-- Bố cục các block được tổ chức lại thành nhiều hàng hơn (ít cột hơn trên mỗi hàng) để các block có nhiều không gian ngang hơn, giúp số liệu hiển thị đẹp mắt mà không bị xuống dòng.
+- Có nút / liên kết "Quên mật khẩu?" ngay trên giao diện đăng nhập.
+- Click nút sẽ hiển thị Dialog/Modal nhập email đăng nhập.
+- Hệ thống kiểm tra email, tự tạo mật khẩu mới an toàn, cập nhật mật khẩu tài khoản trong Supabase Auth, và gửi email thông báo mật khẩu mới tới người dùng qua Resend với domain `trangsucdecoco.vn` (VD: `DECOCO Analytics <no-reply@trangsucdecoco.vn>`).
+- Màn hình hiển thị phản hồi rõ ràng (loading, lỗi nếu email không tồn tại, hoặc thông báo thành công kèm hướng dẫn kiểm tra hộp thư).
 
 ## Ngữ cảnh & Môi trường
-- **Môi trường**: Next.js App Router (React), Tailwind CSS, TypeScript.
+- **Môi trường**: Next.js (App Router), Supabase Auth, React, Tailwind CSS.
+- **Dịch vụ Email**: Resend SDK (API Key cấu hình trong `.env.local`).
+- **Tên miền gửi mail**: `trangsucdecoco.vn` (Đã xác thực DNS trên Mắt Bão).
 - **Các file liên quan**:
-  1. `src/components/ScorecardValue.tsx` (Component hiển thị giá trị)
-  2. `src/app/(main)/dashboard/page.tsx` (Trang tổng quan - 5 Score Cards)
-  3. `src/app/(main)/team/booking/page.tsx` (Trang KOC - 5 Score Cards)
-  4. `src/app/(main)/team/content/page.tsx` (Trang Thương hiệu - 9 Score Cards)
+  1. `src/app/login/page.tsx` (Giao diện đăng nhập)
+  2. `src/app/api/auth/forgot-password/route.ts` (API route mới xử lý cấp lại mật khẩu & gửi email)
+  3. `package.json` (Cần cài bổ sung package `resend`)
+  4. `.env.local` (Cần đảm bảo có `RESEND_API_KEY` và `SUPABASE_SERVICE_ROLE_KEY`)
 
 ---
 
 ## Phân tích Nguyên nhân Gốc rễ (Root Cause Analysis)
 
-### 1. Phân tích layout hiện tại
-- **`ScorecardValue.tsx`**: Đang sử dụng class `break-all` tại thẻ `<p>` bao ngoài, cho phép chữ ngắt dòng ở bất cứ ký tự nào.
-- **Trang Dashboard & KOC (5 blocks)**: Lưới `lg:grid-cols-5` cố định 5 block trên 1 hàng ở màn hình desktop. Chiều rộng tối đa của block bị giới hạn.
-- **Trang Thương hiệu (9 blocks)**: Lưới `lg:grid-cols-5 xl:grid-cols-9` chia tối đa 9 block trên 1 hàng. Khi màn hình từ `1280px` trở lên, 9 block bị dồn hàng ngang làm chiều ngang mỗi block rất hẹp.
+### 1. Phân tích Hiện trạng Codebase
+- File `src/app/login/page.tsx` hiện chỉ có state và form xử lý `signInWithPassword`.
+- Chưa có API Endpoint phía Server xử lý việc xác thực email, sinh mật khẩu ngẫu nhiên và gửi mail với quyền Admin (`SUPABASE_SERVICE_ROLE_KEY`).
+- Package `resend` chưa được tích hợp vào dự án.
 
-### 2. Sơ đồ Cải tiến Layout (Tăng dòng blocks, không ngắt dòng chữ)
+### 2. Sơ đồ Luồng Xử lý Quên Mật Khẩu (Execution & Data Flow)
 ```
-TRƯỚC ĐÂY (E.g. Dashboard):
-[ Block 1 ] [ Block 2 ] [ Block 3 ] [ Block 4 ] [ Block 5 ]  <-- 5 blocks trên 1 hàng, chữ bên trong break-all thành 2 dòng.
-
-SAU KHI CẢI TIẾN:
-[    Block 1 (Rộng hơn)    ] [    Block 2 (Rộng hơn)    ] [    Block 3 (Rộng hơn)    ]
-[    Block 4 (Rộng hơn)    ] [    Block 5 (Rộng hơn)    ]
-<-- 3 cột ở hàng 1, 2 cột ở hàng 2. Không gian block lớn gấp ~1.6 lần, số liệu hiển thị trọn vẹn trên 1 hàng.
+[User tại /login]
+       │
+       ├─► Click "Quên mật khẩu?" ──► [Hiển thị Modal/Form Quên Mật Khẩu]
+       │                                            │
+       │                                     Nhập Email & Click Gửi
+       │                                            │
+       │                                            ▼
+       └─────────────────────────────► [POST /api/auth/forgot-password]
+                                                    │
+                                     ┌──────────────┴──────────────┐
+                                     │ 1. Kiểm tra Email trong DB  │
+                                     │    (bảng `profiles`)        │
+                                     └──────────────┬──────────────┘
+                                                    │ (Nếu email tồn tại & active)
+                                     ┌──────────────▼──────────────┐
+                                     │ 2. Sinh mật khẩu ngẫu nhiên │
+                                     │    mới an toàn (8-10 ký tự) │
+                                     └──────────────┬──────────────┘
+                                                    │
+                                     ┌──────────────▼──────────────┐
+                                     │ 3. Cập nhật mật khẩu mới    │
+                                     │    trên Supabase Auth Admin │
+                                     └──────────────┬──────────────┘
+                                                    │
+                                     ┌──────────────▼──────────────┐
+                                     │ 4. Gửi email qua Resend     │
+                                     │    From: no-reply@...vn     │
+                                     └──────────────┬──────────────┘
+                                                    │
+                                                    ▼
+                                       [Thông báo Thành Công UI]
 ```
 
 ---
 
 ## Đề xuất Sửa lỗi (Proposed Fixes)
 
-### Phương án 1: Điều chỉnh số cột tối đa thành 3, ngăn ngắt dòng giá trị (KHUYẾN NGHỊ)
-1. **Cập nhật `src/components/ScorecardValue.tsx`**:
-   - Loại bỏ class `break-all`.
-   - Thêm class `whitespace-nowrap` vào thẻ số và thẻ đơn vị để giữ nguyên vẹn giá trị trên một dòng.
-2. **Cập nhật Grid Layout trang Dashboard (`/dashboard`) & KOC (`/team/booking`)**:
-   - Đổi grid cols từ `lg:grid-cols-5` thành `lg:grid-cols-3`.
-   - Với 5 cards, grid sẽ tự động chia thành:
-     - Hàng 1: 3 cards (GMV Tổng, GMV trực tiếp, Tổng đơn hàng)
-     - Hàng 2: 2 cards (Tổng Video, Tổng lượt xem)
-3. **Cập nhật Grid Layout trang Thương hiệu (`/team/content`)**:
-   - Đổi grid cols từ `lg:grid-cols-5 xl:grid-cols-9` thành `lg:grid-cols-3 xl:grid-cols-3` (hoặc đơn giản là `lg:grid-cols-3`).
-   - Với 9 cards, grid sẽ tự động chia thành 3 hàng cân đối (mỗi hàng 3 cards):
-     - Hàng 1 (Nhóm GMV & Click): GMV Tổng, GMV trực tiếp, Click
-     - Hàng 2 (Nhóm chuyển đổi): CTR (%), Đơn hàng, CR (%)
-     - Hàng 3 (Nhóm hiển thị & reach): Video đã đăng, Lượt hiển thị, Lượt xem
-   - Layout 3x3 này vô cùng cân đối, cấu trúc rõ ràng, và mang lại chiều rộng block tối đa giúp số liệu dài hiển thị thoải mái nhất.
+### Phương án 1: Tạo API Route `/api/auth/forgot-password` và tích hợp Resend SDK + Form Modal Quên mật khẩu tại Client (KHUYẾN NGHỊ)
+1. **Cài đặt thư viện `resend`**:
+   - Thêm `resend` vào `package.json` dependencies.
+2. **Kiểm tra/Bổ sung Biến môi trường**:
+   - Đảm bảo `.env.local` có `RESEND_API_KEY` và `SUPABASE_SERVICE_ROLE_KEY`.
+3. **Tạo API Route `src/app/api/auth/forgot-password/route.ts`**:
+   - Dùng `SUPABASE_SERVICE_ROLE_KEY` khởi tạo Supabase admin client.
+   - Tìm người dùng trong bảng `profiles` theo email (`is_active = true`).
+   - Nếu không tìm thấy: Trả về lỗi thông báo email không có trong hệ thống.
+   - Nếu tìm thấy:
+     - Tạo ngẫu nhiên mật khẩu mới (VD: `Decoco@` + 6 số/chữ ngẫu nhiên).
+     - Cập nhật mật khẩu trong Supabase Auth: `supabaseAdmin.auth.admin.updateUserById(profile.id, { password: newPassword })`.
+     - Khởi tạo client Resend với `RESEND_API_KEY`.
+     - Gửi email HTML chuyên nghiệp từ `DECOCO Analytics <no-reply@trangsucdecoco.vn>` (hoặc địa chỉ thuộc domain `trangsucdecoco.vn`) đến email người dùng với mật khẩu mới.
+4. **Cập nhật giao diện `src/app/login/page.tsx`**:
+   - Bổ sung nút/liên kết "Quên mật khẩu?" cạnh/dưới ô Mật khẩu.
+   - Xây dựng Dialog Modal "Khôi phục mật khẩu":
+     - Ô nhập Email
+     - Nút "Gửi mật khẩu mới" (kèm trạng thái loading)
+     - Nút "Hủy / Quay lại"
+     - Hiển thị thông báo lỗi hoặc thông báo thành công sau khi gửi email.
 
-### Phương án 2: Sử dụng Flexbox tự động co giãn (`flex-wrap`)
-- Sử dụng layout flexbox thay vì grid để các block tự rớt dòng khi thiếu chiều rộng.
-- **Nhược điểm**: Bố cục flex-wrap có thể không đều nhau trên các kích thước màn hình khác nhau (ví dụ hàng trên 4 block, hàng dưới 1 block gây mất cân đối). Sử dụng Grid Layout 3 cột cố định đem lại giao diện ổn định và chuyên nghiệp hơn.
+### Phương án 2: Sử dụng chức năng gửi link Reset Password mặc định của Supabase Auth
+- Sử dụng `supabase.auth.resetPasswordForEmail(email)`.
+- **Nhược điểm**: Cần cấu hình Custom SMTP server riêng trên Supabase Cloud Dashboard, không kiểm soát được template HTML email theo nhận diện thương hiệu DECOCO và không dùng trực tiếp được Resend API Key đã có sẵn trong `.env.local`.
 
 ---
 
 ## Kế hoạch Xác minh
 
-### 1. Kiểm tra thủ công (Manual Verification)
-- Khởi chạy dev server.
-- Xác nhận các con số không còn bị bẻ đôi dòng (`break-all` bị loại bỏ).
-- Kiểm tra các trang để đảm bảo:
-  - Dashboard & KOC hiển thị 3 cột ở hàng đầu và 2 cột ở hàng tiếp theo.
-  - Trang Thương hiệu hiển thị lưới 3x3 (3 hàng, mỗi hàng 3 card) cân đối.
-  - Số liệu hiển thị nguyên vẹn trên 1 dòng đơn đẹp mắt.
+### 1. Kiểm tra Cài đặt & Build
+- Chạy `npm install resend` (hoặc kiểm tra `package.json`).
+- Kiểm tra build TypeScript thành công (`npm run build`).
 
-### 2. Xác minh kỹ thuật (Technical Verification)
-- Chạy `npm run build` để kiểm tra build thành công.
+### 2. Kiểm tra Chức năng Thủ công
+- Truy cập `/login`, bấm vào "Quên mật khẩu?".
+- Thử nhập email không có trong hệ thống -> Kiểm tra báo lỗi đúng.
+- Nhập email hợp lệ có trong DB -> Kiểm tra thông báo thành công.
+- Kiểm tra hòm thư của email đăng nhập để xác nhận nhận được mail mật khẩu mới gửi từ domain `trangsucdecoco.vn`.
+- Tiến hành dùng mật khẩu mới trong email để đăng nhập lại tại `/login`.
 
 ---
 
-## Kết quả Sửa lỗi (Fix Result) — ✅ THÀNH CÔNG
+## Kết quả Kiểm thử (Verification Results)
 
-### Thay đổi đã áp dụng (Minimal changes — theo Phương án 1)
-1. **`src/components/ScorecardValue.tsx`**: bỏ `break-all`, thêm `whitespace-nowrap` → số + đơn vị luôn nằm trọn trên 1 dòng, không bị bẻ đôi.
-2. **Dashboard & KOC** (`/dashboard`, `/team/booking`): lưới `lg:grid-cols-5` → `lg:grid-cols-3` (5 card = hàng 1 có 3, hàng 2 có 2 → mỗi block rộng hơn ~1.6×).
-3. **Thương hiệu** (`/team/content`): `lg:grid-cols-5 xl:grid-cols-9` → `lg:grid-cols-3` (9 card thành lưới 3×3 cân đối).
+**Trạng thái tổng: THÀNH CÔNG ✅** (áp dụng Phương án 1 — KHUYẾN NGHỊ, thay đổi tối thiểu).
 
-### Kiểm thử tự động
-- **Script kiểm tra layout** `scratch/test-scorecard-layout.mjs` (assert class trong source):
+### Các thay đổi đã áp dụng
+1. Cài `resend` (`^6.18.0`) vào `package.json`.
+2. Tạo API route mới `src/app/api/auth/forgot-password/route.ts`:
+   - Khởi tạo Supabase admin client bằng `SUPABASE_SERVICE_ROLE_KEY`.
+   - Tra cứu email trong bảng `profiles` (`is_active = true`).
+   - Sinh mật khẩu mới an toàn `Decoco@` + 6 ký tự ngẫu nhiên.
+   - `auth.admin.updateUserById(...)` để cập nhật mật khẩu.
+   - Gửi email HTML thương hiệu DECOCO qua Resend từ `DECOCO Analytics <no-reply@trangsucdecoco.vn>`.
+   - Xử lý lỗi rõ ràng khi thiếu `SUPABASE_SERVICE_ROLE_KEY` hoặc `RESEND_API_KEY`.
+3. Tạo component `src/components/ForgotPasswordDialog.tsx` (modal nhập email, trạng thái loading, thông báo lỗi/thành công) — style đồng bộ với `ChangePasswordDialog`.
+4. Cập nhật `src/app/login/page.tsx`: thêm liên kết "Quên mật khẩu?" và mount modal (truyền sẵn email đang nhập).
+5. Bổ sung `RESEND_API_KEY` vào `.env.local` (đã có key thật). **Lưu ý cần cấu hình `RESEND_API_KEY` trên Vercel để chạy production.**
+
+### 1. Build TypeScript — PASS
 ```
-PASS  ScorecardValue: break-all removed
-PASS  ScorecardValue: whitespace-nowrap added
-PASS  dashboard: grid lg:grid-cols-3        | PASS  dashboard: no lg:grid-cols-5
-PASS  booking: grid lg:grid-cols-3          | PASS  booking: no lg:grid-cols-5
-PASS  content: grid lg:grid-cols-3          | PASS  content: no grid-cols-9 / no lg:grid-cols-5
-ALL PASS ✅
+Running TypeScript ... Finished TypeScript in 15.8s
+✓ Generating static pages (19/19)
+Route (app): ƒ /api/auth/forgot-password  ← route mới đã đăng ký
 ```
-- **Build**: `✓ Compiled successfully`, TypeScript pass, 18/18 trang.
 
-→ Số liệu tiền tệ dài không còn bị ngắt dòng nham nhở; các Score Card dàn thành nhiều hàng (3 cột/hàng) nên mỗi thẻ rộng hơn, hiển thị trọn số trên 1 dòng.
+### 2. Kiểm thử API tự động (không gửi email thật để tránh reset nhầm tài khoản thật) — PASS
+```
+TEST 1 — thiếu email:
+POST /api/auth/forgot-password  {}
+→ HTTP 400  {"error":"Vui lòng nhập email."}
+
+TEST 2 — email không tồn tại:
+POST /api/auth/forgot-password  {"email":"khongtontai_xxxx@example.com"}
+→ HTTP 404  {"error":"Email không tồn tại hoặc tài khoản đã bị vô hiệu hóa."}
+```
+Xác nhận: luồng kiểm tra đầu vào + tra cứu bảng `profiles` + xử lý lỗi hoạt động đúng.
+
+### 3. Kiểm thử gửi email thật (positive case) — CHỜ XÁC MINH THỦ CÔNG
+Không chạy tự động vì thao tác này sẽ **thực sự đổi mật khẩu** của một tài khoản nội bộ thật và gửi email thật. Người dùng vui lòng làm theo mục "Kế hoạch Xác minh > 2. Kiểm tra Chức năng Thủ công" với một email nội bộ thật (yêu cầu domain `trangsucdecoco.vn` đã xác thực trên Resend).

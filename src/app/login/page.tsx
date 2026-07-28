@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Sparkles, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import ForgotPasswordDialog from '@/components/ForgotPasswordDialog';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,6 +13,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showForgot, setShowForgot] = useState(false);
 
   useEffect(() => {
     // Nếu đã login thì chuyển thẳng về dashboard
@@ -93,6 +95,17 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {/* Quên mật khẩu */}
+            <div className="flex justify-end -mt-2">
+              <button
+                type="button"
+                onClick={() => setShowForgot(true)}
+                className="text-xs text-[#8b5cf6] hover:text-[#c084fc] transition-colors"
+              >
+                Quên mật khẩu?
+              </button>
+            </div>
+
             {/* Error */}
             {error && (
               <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">
@@ -122,6 +135,12 @@ export default function LoginPage() {
           DECOCO Analytics © 2026 — Chỉ dành cho nội bộ
         </p>
       </div>
+
+      <ForgotPasswordDialog
+        isOpen={showForgot}
+        onClose={() => setShowForgot(false)}
+        defaultEmail={email}
+      />
     </div>
   );
 }
