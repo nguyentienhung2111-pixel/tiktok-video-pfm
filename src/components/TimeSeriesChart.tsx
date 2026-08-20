@@ -18,7 +18,7 @@ import { Line } from 'react-chartjs-2';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { LineChart, TrendingUp, TrendingDown, Loader2 } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, addDays, differenceInCalendarDays } from 'date-fns';
 import type { TimeSeriesMetricPoint } from '@/lib/queries';
 
 ChartJS.register(
@@ -61,6 +61,53 @@ function periodLabel(iso: string): string {
   }
 }
 
+const WEEK_DAYS = 7;
+
+/**
+ * Split any period spanning more than one week into evenly-distributed weekly
+ * sub-points (each metric = total / numberOfWeeks). This turns a single lumped
+ * period (e.g. an initial multi-month backfill) into a flat horizontal line
+ * across those weeks instead of a huge spike, so the week-to-week variation of
+ * the later periods stays readable. Sums are preserved, so the "Tổng" and
+ * week-over-week figures remain correct.
+ */
+function expandLongPeriods(data: TimeSeriesMetricPoint[]): TimeSeriesMetricPoint[] {
+  const out: TimeSeriesMetricPoint[] = [];
+  for (const p of data) {
+    let start: Date;
+    let end: Date;
+    try {
+      start = parseISO(p.periodStart);
+      end = parseISO(p.periodEnd);
+    } catch {
+      out.push(p);
+      continue;
+    }
+    const spanDays = differenceInCalendarDays(end, start) + 1;
+    const numWeeks = Math.max(1, Math.round(spanDays / WEEK_DAYS));
+    if (numWeeks <= 1) {
+      out.push(p);
+      continue;
+    }
+    for (let i = 0; i < numWeeks; i++) {
+      const bucketStart = addDays(start, i * WEEK_DAYS);
+      const rawEnd = addDays(bucketStart, WEEK_DAYS - 1);
+      const bucketEnd = i === numWeeks - 1 || rawEnd > end ? end : rawEnd;
+      out.push({
+        periodStart: format(bucketStart, 'yyyy-MM-dd'),
+        periodEnd: format(bucketEnd, 'yyyy-MM-dd'),
+        totalGMV: p.totalGMV / numWeeks,
+        totalGMVDirect: p.totalGMVDirect / numWeeks,
+        totalGMVIndirect: p.totalGMVIndirect / numWeeks,
+        totalOrders: p.totalOrders / numWeeks,
+        totalViews: p.totalViews / numWeeks,
+        totalVideos: p.totalVideos / numWeeks,
+      });
+    }
+  }
+  return out;
+}
+
 interface TimeSeriesChartProps {
   data: TimeSeriesMetricPoint[];
   loading?: boolean;
@@ -77,15 +124,18 @@ export function TimeSeriesChart({
   const [metric, setMetric] = useState<MetricKey>('gmv');
   const theme = ACCENTS[accent];
 
+  // Long lumped periods are split into weekly sub-points for a readable trend.
+  const points = useMemo(() => expandLongPeriods(data), [data]);
+
   const values = useMemo(
     () =>
-      data.map((d) =>
+      points.map((d) =>
         metric === 'gmv' ? d.totalGMV : metric === 'orders' ? d.totalOrders : d.totalViews
       ),
-    [data, metric]
+    [points, metric]
   );
 
-  const labels = useMemo(() => data.map((d) => periodLabel(d.periodStart)), [data]);
+  const labels = useMemo(() => points.map((d) => periodLabel(d.periodStart)), [points]);
 
   const total = useMemo(() => values.reduce((sum, v) => sum + v, 0), [values]);
 
@@ -148,7 +198,7 @@ export function TimeSeriesChart({
           callbacks: {
             title: (items) => {
               const idx = items[0]?.dataIndex ?? 0;
-              const point = data[idx];
+              const point = points[idx];
               if (!point) return '';
               return `${periodLabel(point.periodStart)} → ${periodLabel(point.periodEnd)}`;
             },
@@ -173,7 +223,7 @@ export function TimeSeriesChart({
         },
       },
     }),
-    [data, formatValue]
+    [points, formatValue]
   );
 
   return (
