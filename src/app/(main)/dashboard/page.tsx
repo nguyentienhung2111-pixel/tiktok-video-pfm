@@ -18,7 +18,8 @@ import { DateRange } from 'react-day-picker';
 import { subDays, startOfToday, format } from 'date-fns';
 import { toPng } from 'html-to-image';
 import FilterBar, { FilterState } from '@/components/FilterBar';
-import { fetchVideosWithMetrics, fetchVideosSummary, VideosSummary } from '@/lib/queries';
+import { TimeSeriesChart } from '@/components/TimeSeriesChart';
+import { fetchVideosWithMetrics, fetchVideosSummary, fetchVideosTimeSeries, VideosSummary, TimeSeriesMetricPoint } from '@/lib/queries';
 
 const INITIAL_FILTERS: FilterState = {
   search: '',
@@ -44,6 +45,7 @@ const EMPTY_SUMMARY: VideosSummary = {
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState<VideosSummary>(EMPTY_SUMMARY);
+  const [timeSeries, setTimeSeries] = useState<TimeSeriesMetricPoint[]>([]);
   const [paginatedVideos, setPaginatedVideos] = useState<VideoWithMetrics[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,8 +77,9 @@ export default function DashboardPage() {
         tagIds: filters.tagIds,
       };
 
-      const [summaryResult, tableResult, usersResult] = await Promise.all([
+      const [summaryResult, timeSeriesResult, tableResult, usersResult] = await Promise.all([
         fetchVideosSummary(baseParams),
+        fetchVideosTimeSeries(baseParams),
         fetchVideosWithMetrics({
           ...baseParams,
           limit: pageSize,
@@ -86,6 +89,7 @@ export default function DashboardPage() {
       ]);
 
       setSummary(summaryResult);
+      setTimeSeries(timeSeriesResult);
       setPaginatedVideos(tableResult.data);
       setTotalCount(tableResult.totalCount);
 
@@ -179,6 +183,16 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           ))}
+        </div>
+
+        {/* Time-series trend chart */}
+        <div className="animate-in fade-in slide-in-from-bottom-6 duration-1000">
+          <TimeSeriesChart
+            data={timeSeries}
+            loading={loading}
+            accent="blue"
+            title="Xu hướng GMV / Đơn hàng / Lượt xem theo tuần"
+          />
         </div>
 
         {/* Video Table */}

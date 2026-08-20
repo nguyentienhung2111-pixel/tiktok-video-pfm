@@ -39,6 +39,17 @@ export type FetchVideosSummaryParams = Omit<
   'orderBy' | 'orderAsc' | 'limit' | 'offset'
 >;
 
+export interface TimeSeriesMetricPoint {
+  periodStart: string;
+  periodEnd: string;
+  totalGMV: number;
+  totalGMVDirect: number;
+  totalGMVIndirect: number;
+  totalOrders: number;
+  totalViews: number;
+  totalVideos: number;
+}
+
 /**
  * Fetch videos with aggregated metrics from video_period_metrics,
  * filtered by report period and other criteria.
@@ -151,4 +162,66 @@ export async function fetchVideosSummary(
     totalClicks: Number(row?.total_clicks ?? 0),
     totalImpressions: Number(row?.total_impressions ?? 0),
   };
+}
+
+/**
+ * Fetch metrics aggregated per reporting period (week / upload cycle) for the
+ * time-series trend chart. Uses the get_videos_timeseries_for_period RPC and
+ * accepts the same filters as fetchVideosSummary. Rows are returned ordered by
+ * period_start ascending.
+ */
+export async function fetchVideosTimeSeries(
+  params: FetchVideosSummaryParams
+): Promise<TimeSeriesMetricPoint[]> {
+  const {
+    periodStart,
+    periodEnd,
+    sourceType,
+    productId,
+    minGMV,
+    minViews,
+    search,
+    tagIds,
+    assignedUserId,
+  } = params;
+
+  const rpcParams: Record<string, unknown> = {};
+  if (periodStart) rpcParams.p_period_start = periodStart;
+  if (periodEnd) rpcParams.p_period_end = periodEnd;
+  if (sourceType && sourceType !== 'all') rpcParams.p_source_type = sourceType;
+  if (productId) rpcParams.p_product_id = productId;
+  if (minGMV) rpcParams.p_min_gmv = parseInt(minGMV);
+  if (minViews) rpcParams.p_min_views = parseInt(minViews);
+  if (search) rpcParams.p_search = search;
+  if (tagIds && tagIds.length > 0) rpcParams.p_tag_ids = tagIds;
+  if (assignedUserId) rpcParams.p_assigned_user_id = assignedUserId;
+
+  const { data, error } = await supabase.rpc(
+    'get_videos_timeseries_for_period',
+    rpcParams
+  );
+
+  if (error) throw error;
+
+  const rows = (data || []) as Array<{
+    period_start: string;
+    period_end: string;
+    total_gmv: number | string | null;
+    total_gmv_direct: number | string | null;
+    total_gmv_indirect: number | string | null;
+    total_orders: number | string | null;
+    total_views: number | string | null;
+    total_videos: number | string | null;
+  }>;
+
+  return rows.map((r) => ({
+    periodStart: r.period_start,
+    periodEnd: r.period_end,
+    totalGMV: Number(r.total_gmv ?? 0),
+    totalGMVDirect: Number(r.total_gmv_direct ?? 0),
+    totalGMVIndirect: Number(r.total_gmv_indirect ?? 0),
+    totalOrders: Number(r.total_orders ?? 0),
+    totalViews: Number(r.total_views ?? 0),
+    totalVideos: Number(r.total_videos ?? 0),
+  }));
 }

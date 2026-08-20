@@ -17,7 +17,8 @@ import { subDays, startOfToday, format } from 'date-fns';
 import { toPng } from 'html-to-image';
 import FilterBar, { FilterState } from '@/components/FilterBar';
 import { Leaderboard, LeaderboardEntry } from '@/components/Leaderboard';
-import { fetchVideosWithMetrics, fetchVideosSummary, VideosSummary } from '@/lib/queries';
+import { TimeSeriesChart } from '@/components/TimeSeriesChart';
+import { fetchVideosWithMetrics, fetchVideosSummary, fetchVideosTimeSeries, VideosSummary, TimeSeriesMetricPoint } from '@/lib/queries';
 
 const INITIAL_FILTERS: FilterState = {
   search: '',
@@ -53,6 +54,7 @@ const TAG_GROUP_TABS: ReadonlyArray<{ key: 'Format' | 'Hook' | 'Sound'; label: s
 export default function ContentTeamPage() {
   const { user } = useUser();
   const [summary, setSummary] = useState<VideosSummary>(EMPTY_SUMMARY);
+  const [timeSeries, setTimeSeries] = useState<TimeSeriesMetricPoint[]>([]);
   const [productLeaderboard, setProductLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [paginatedVideos, setPaginatedVideos] = useState<VideoWithMetrics[]>([]);
   const [tagLeaderboard, setTagLeaderboard] = useState<Record<string, TagLbEntry[]>>({});
@@ -98,8 +100,9 @@ export default function ContentTeamPage() {
         p_tag_ids: filters.tagIds && filters.tagIds.length > 0 ? filters.tagIds : null,
       };
 
-      const [summaryResult, tableResult, usersResult, tagLbResult, productLbResult] = await Promise.all([
+      const [summaryResult, timeSeriesResult, tableResult, usersResult, tagLbResult, productLbResult] = await Promise.all([
         fetchVideosSummary(baseParams),
+        fetchVideosTimeSeries(baseParams),
         fetchVideosWithMetrics({
           ...baseParams,
           limit: pageSize,
@@ -115,6 +118,7 @@ export default function ContentTeamPage() {
       ]);
 
       setSummary(summaryResult);
+      setTimeSeries(timeSeriesResult);
       setPaginatedVideos(tableResult.data);
       setTotalCount(tableResult.totalCount);
 
@@ -222,6 +226,16 @@ export default function ContentTeamPage() {
               </CardContent>
             </Card>
           ))}
+        </div>
+
+        {/* Time-series trend chart */}
+        <div className="animate-in fade-in slide-in-from-bottom-6 duration-1000">
+          <TimeSeriesChart
+            data={timeSeries}
+            loading={loading}
+            accent="emerald"
+            title="Xu hướng GMV / Đơn hàng / Lượt xem kênh Thương hiệu"
+          />
         </div>
 
         {/* Leaderboards */}

@@ -18,7 +18,8 @@ import { subDays, startOfToday, format } from 'date-fns';
 import { toPng } from 'html-to-image';
 import FilterBar, { FilterState } from '@/components/FilterBar';
 import { Leaderboard, LeaderboardEntry } from '@/components/Leaderboard';
-import { fetchVideosWithMetrics, fetchVideosSummary, VideosSummary } from '@/lib/queries';
+import { TimeSeriesChart } from '@/components/TimeSeriesChart';
+import { fetchVideosWithMetrics, fetchVideosSummary, fetchVideosTimeSeries, VideosSummary, TimeSeriesMetricPoint } from '@/lib/queries';
 
 const INITIAL_FILTERS: FilterState = {
   search: '',
@@ -54,6 +55,7 @@ const TAG_GROUP_TABS: ReadonlyArray<{ key: 'Format' | 'Hook' | 'Sound'; label: s
 export default function BookingTeamPage() {
   const { user } = useUser();
   const [summary, setSummary] = useState<VideosSummary>(EMPTY_SUMMARY);
+  const [timeSeries, setTimeSeries] = useState<TimeSeriesMetricPoint[]>([]);
   const [kocLeaderboard, setKocLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [staffLeaderboard, setStaffLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [tagLeaderboard, setTagLeaderboard] = useState<Record<string, TagLbEntry[]>>({});
@@ -110,8 +112,9 @@ export default function BookingTeamPage() {
         p_limit_per_group: 5,
       };
 
-      const [summaryResult, tableResult, usersResult, staffLbResult, kocLbResult, tagLbResult] = await Promise.all([
+      const [summaryResult, timeSeriesResult, tableResult, usersResult, staffLbResult, kocLbResult, tagLbResult] = await Promise.all([
         fetchVideosSummary(baseParams),
+        fetchVideosTimeSeries(baseParams),
         fetchVideosWithMetrics({
           ...baseParams,
           limit: pageSize,
@@ -124,6 +127,7 @@ export default function BookingTeamPage() {
       ]);
 
       setSummary(summaryResult);
+      setTimeSeries(timeSeriesResult);
       setPaginatedVideos(tableResult.data);
       setTotalCount(tableResult.totalCount);
 
@@ -255,6 +259,16 @@ export default function BookingTeamPage() {
               </CardContent>
             </Card>
           ))}
+        </div>
+
+        {/* Time-series trend chart */}
+        <div className="animate-in fade-in slide-in-from-bottom-6 duration-1000">
+          <TimeSeriesChart
+            data={timeSeries}
+            loading={loading}
+            accent="purple"
+            title="Xu hướng GMV / Đơn hàng / Lượt xem kênh KOC"
+          />
         </div>
 
         {/* Leaderboards */}

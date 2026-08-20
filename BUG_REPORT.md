@@ -1,175 +1,177 @@
-# Báo cáo Lỗi
+# Báo cáo Lỗi & Nhu cầu Tính năng
 
 ## Trạng thái
-ĐÃ SỬA XONG — Kết quả kiểm thử: **Thành công** (xem mục "Kết quả Kiểm thử" ở cuối).
+ĐÃ SỬA XONG — Thành công ✅
 
 ## Tiêu đề Lỗi
-Màn hình đăng nhập thiếu tính năng "Quên mật khẩu" và chưa có tích hợp dịch vụ gửi email tự động (Resend) để cấp lại mật khẩu mới cho người dùng.
+Cả 3 trang Dashboard chính (`/dashboard`, `/team/content`, `/team/booking`) đều thiếu biểu đồ xu hướng theo thời gian để theo dõi và so sánh doanh số (GMV) giữa các tuần.
 
 ## Mô tả Lỗi
-Hiện tại trên trang Đăng nhập (`/login`), người dùng chỉ có tùy chọn nhập Email và Mật khẩu để đăng nhập. Nếu người dùng quên mật khẩu, hệ thống chưa cung cấp cơ chế khôi phục hay cấp lại mật khẩu.
+Hiện tại trên cả 3 màn hình cốt lõi của ứng dụng DECOCO Analytics:
+1. **Dashboard Tổng quan** (`/dashboard`): Chỉ hiển thị các thẻ tổng (Scorecards) và bảng dữ liệu chi tiết video.
+2. **Thương hiệu (DECOCO Official)** (`/team/content`): Hiển thị Scorecards, Leaderboard (Top Sản phẩm, Xếp hạng Content) và bảng chi tiết video Brand.
+3. **KOC / Affiliate Performance** (`/team/booking`): Hiển thị Scorecards, Leaderboards (Top KOC, Top Booking, Xếp hạng Content) và bảng chi tiết video KOC.
 
-Nhu cầu bổ sung tính năng:
-- Thêm liên kết / nút "Quên mật khẩu?" tại màn hình đăng nhập.
-- Khi bấm vào sẽ hiển thị form/modal yêu cầu nhập email đăng nhập.
-- Hệ thống kiểm tra xem email có tồn tại và đang hoạt động trong cơ sở dữ liệu (`profiles` / Supabase Auth) hay không.
-- Nếu đúng email có trong hệ thống, tự động sinh mật khẩu mới, cập nhật mật khẩu mới vào tài khoản trong Supabase Auth, và gửi email tự động chứa mật khẩu mới về hộp thư người dùng bằng dịch vụ Resend thông qua domain `trangsucdecoco.vn`.
+👉 **Vấn đề**: Người dùng và ban quản trị không thể quan sát trực quan sự biến động tăng/giảm của doanh số (GMV), số lượng đơn hàng và lượt xem qua các mốc thời gian (các tuần / các kỳ báo cáo) để đánh giá hiệu quả chiến dịch cũng như so sánh hiệu suất giữa các tuần.
 
 ## Các bước tái hiện
-1. Truy cập trang Đăng nhập tại đường dẫn `/login`.
-2. Quan sát giao diện: Chỉ có ô nhập Email, Mật khẩu và nút "Đăng nhập", hoàn toàn chưa có liên kết hay nút "Quên mật khẩu?".
-3. Khi người dùng quên mật khẩu: Không có cách nào tự cấp lại mật khẩu mà phải nhờ quản trị viên reset thủ công trong trang Quản lý tài khoản.
+1. Truy cập vào ứng dụng tại `tiktok-video-pfm.vercel.app`.
+2. Lần lượt mở 3 trang:
+   - `/dashboard` (Dashboard Tổng quan)
+   - `/team/content` (Kênh Thương hiệu)
+   - `/team/booking` (Kênh KOC / Affiliate)
+3. Chọn khoảng thời gian dài (ví dụ: nhiều tuần hoặc nhiều tháng trong DateRangePicker).
+4. Quan sát: Chỉ có tổng số liệu lũy kế của toàn bộ khoảng thời gian, hoàn toàn không có biểu đồ trực quan thể hiện sự thay đổi doanh số theo từng tuần / kỳ.
 
 ## Kết quả Thực tế vs Kết quả Mong đợi
 
 ### Kết quả Thực tế
-- Chưa có giao diện "Quên mật khẩu" tại `/login`.
-- Chưa có API backend tiếp nhận yêu cầu reset password, tự động tạo mật khẩu ngẫu nhiên và gửi email.
-- Thư viện `resend` chưa được cài đặt trong `package.json`.
-- Chức năng gửi mail chưa được tích hợp với domain `trangsucdecoco.vn`.
+- Chưa có biểu đồ đường/cột thể hiện dòng thời gian (Time-series Chart) trên cả 3 trang.
+- Chưa có hàm API / Supabase RPC tổng hợp số liệu phân rã theo từng tuần hoặc từng kỳ báo cáo (`period_start`, `period_end`).
+- Khó so sánh tuần này tăng hay giảm bao nhiêu % so với tuần trước.
 
 ### Kết quả Mong đợi
-- Có nút / liên kết "Quên mật khẩu?" ngay trên giao diện đăng nhập.
-- Click nút sẽ hiển thị Dialog/Modal nhập email đăng nhập.
-- Hệ thống kiểm tra email, tự tạo mật khẩu mới an toàn, cập nhật mật khẩu tài khoản trong Supabase Auth, và gửi email thông báo mật khẩu mới tới người dùng qua Resend với domain `trangsucdecoco.vn` (VD: `DECOCO Analytics <no-reply@trangsucdecoco.vn>`).
-- Màn hình hiển thị phản hồi rõ ràng (loading, lỗi nếu email không tồn tại, hoặc thông báo thành công kèm hướng dẫn kiểm tra hộp thư).
+- Cả 3 trang đều được trang bị biểu đồ phân tích xu hướng theo thời gian hiện đại (Dark theme chuẩn DECOCO):
+  - **Trang Tổng quan (`/dashboard`)**: Biểu đồ so sánh GMV tổng, đơn hàng, lượt xem hoặc cơ cấu GMV Brand vs KOC theo từng tuần.
+  - **Trang Thương hiệu (`/team/content`)**: Biểu đồ biến động GMV, GMV trực tiếp, đơn hàng và lượt xem của kênh Brand qua các tuần (tông màu Emerald).
+  - **Trang KOC / Affiliate (`/team/booking`)**: Biểu đồ biến động GMV, đơn hàng KOC qua các tuần (tông màu Purple).
+- Hỗ trợ xem so sánh tăng trưởng tuần-qua-tuần (Week-over-Week - WoW %).
+- Hỗ trợ tooltip chi tiết khi rê chuột vào từng tuần.
+- Tự động lọc đồng bộ theo DateRange và các bộ lọc nâng cao (Sản phẩm, Tag, Nhân viên, v.v.).
+- Tích hợp chuẩn xác vào tính năng "Lưu báo cáo (Ảnh)" khi xuất file PNG.
 
 ## Ngữ cảnh & Môi trường
-- **Môi trường**: Next.js (App Router), Supabase Auth, React, Tailwind CSS.
-- **Dịch vụ Email**: Resend SDK (API Key cấu hình trong `.env.local`).
-- **Tên miền gửi mail**: `trangsucdecoco.vn` (Đã xác thực DNS trên Mắt Bão).
+- **Môi trường**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS.
+- **Thư viện biểu đồ**: Dự án đã có sẵn `chart.js` (`^4.5.1`) và `react-chartjs-2` (`^5.3.1`) trong `package.json`.
+- **Cơ sở dữ liệu**: Supabase PostgreSQL (bảng `videos`, `video_period_metrics`, `video_tags`).
 - **Các file liên quan**:
-  1. `src/app/login/page.tsx` (Giao diện đăng nhập)
-  2. `src/app/api/auth/forgot-password/route.ts` (API route mới xử lý cấp lại mật khẩu & gửi email)
-  3. `package.json` (Cần cài bổ sung package `resend`)
-  4. `.env.local` (Cần đảm bảo có `RESEND_API_KEY` và `SUPABASE_SERVICE_ROLE_KEY`)
+  1. `src/app/(main)/dashboard/page.tsx`
+  2. `src/app/(main)/team/content/page.tsx`
+  3. `src/app/(main)/team/booking/page.tsx`
+  4. `src/lib/queries.ts`
+  5. `src/components/TimeSeriesChart.tsx` (Component biểu đồ mới)
+  6. `supabase/migrations/` (RPC tổng hợp dữ liệu theo chuỗi thời gian)
 
 ---
 
 ## Phân tích Nguyên nhân Gốc rễ (Root Cause Analysis)
 
 ### 1. Phân tích Hiện trạng Codebase
-- File `src/app/login/page.tsx` hiện chỉ có state và form xử lý `signInWithPassword`.
-- Chưa có API Endpoint phía Server xử lý việc xác thực email, sinh mật khẩu ngẫu nhiên và gửi mail với quyền Admin (`SUPABASE_SERVICE_ROLE_KEY`).
-- Package `resend` chưa được tích hợp vào dự án.
+- Bảng `video_period_metrics` đã lưu trữ dữ liệu theo từng kỳ tải lên (`period_start`, `period_end`, `gmv`, `gmv_direct`, `gmv_indirect`, `orders`, `views`, v.v.).
+- Tuy nhiên, hiện tại trong `src/lib/queries.ts` và backend Supabase chỉ có hàm `get_videos_summary_for_period` (gộp toàn bộ thành 1 dòng tổng) và `get_videos_with_period_metrics` (phân trang theo video), **chưa có RPC function nhóm dữ liệu theo từng mốc thời gian / từng tuần**.
+- 3 file trang giao diện (`dashboard/page.tsx`, `team/content/page.tsx`, `team/booking/page.tsx`) chưa tích hợp component biểu đồ để render dữ liệu chuỗi thời gian này.
 
-### 2. Sơ đồ Luồng Xử lý Quên Mật Khẩu (Execution & Data Flow)
+### 2. Sơ đồ Luồng Dữ liệu (Data Flow Diagram)
 ```
-[User tại /login]
-       │
-       ├─► Click "Quên mật khẩu?" ──► [Hiển thị Modal/Form Quên Mật Khẩu]
-       │                                            │
-       │                                     Nhập Email & Click Gửi
-       │                                            │
-       │                                            ▼
-       └─────────────────────────────► [POST /api/auth/forgot-password]
-                                                    │
-                                     ┌──────────────┴──────────────┐
-                                     │ 1. Kiểm tra Email trong DB  │
-                                     │    (bảng `profiles`)        │
-                                     └──────────────┬──────────────┘
-                                                    │ (Nếu email tồn tại & active)
-                                     ┌──────────────▼──────────────┐
-                                     │ 2. Sinh mật khẩu ngẫu nhiên │
-                                     │    mới an toàn (8-10 ký tự) │
-                                     └──────────────┬──────────────┘
-                                                    │
-                                     ┌──────────────▼──────────────┐
-                                     │ 3. Cập nhật mật khẩu mới    │
-                                     │    trên Supabase Auth Admin │
-                                     └──────────────┬──────────────┘
-                                                    │
-                                     ┌──────────────▼──────────────┐
-                                     │ 4. Gửi email qua Resend     │
-                                     │    From: no-reply@...vn     │
-                                     └──────────────┬──────────────┘
-                                                    │
-                                                    ▼
-                                       [Thông báo Thành Công UI]
+[User Filter: DateRange, Product, Tags, Staff]
+                    │
+                    ▼
+       [fetchVideosTimeSeries(params)]
+                    │
+                    ▼
+     [Supabase RPC: get_videos_timeseries_for_period]
+                    │
+       ┌────────────┴───────────────────────────┐
+       │ Nhóm theo (period_start, period_end)   │
+       │ SUM(gmv), SUM(orders), SUM(views)...   │
+       │ ORDER BY period_start ASC              │
+       └────────────┬───────────────────────────┘
+                    │
+                    ▼
+   [Component: <TimeSeriesChart data={...} />]
+                    │
+    ┌───────────────┼───────────────┐
+    ▼               ▼               ▼
+[/dashboard]  [/team/content]  [/team/booking]
+(Tổng quan)    (Brand/Emerald)  (KOC/Purple)
 ```
 
 ---
 
 ## Đề xuất Sửa lỗi (Proposed Fixes)
 
-### Phương án 1: Tạo API Route `/api/auth/forgot-password` và tích hợp Resend SDK + Form Modal Quên mật khẩu tại Client (KHUYẾN NGHỊ)
-1. **Cài đặt thư viện `resend`**:
-   - Thêm `resend` vào `package.json` dependencies.
-2. **Kiểm tra/Bổ sung Biến môi trường**:
-   - Đảm bảo `.env.local` có `RESEND_API_KEY` và `SUPABASE_SERVICE_ROLE_KEY`.
-3. **Tạo API Route `src/app/api/auth/forgot-password/route.ts`**:
-   - Dùng `SUPABASE_SERVICE_ROLE_KEY` khởi tạo Supabase admin client.
-   - Tìm người dùng trong bảng `profiles` theo email (`is_active = true`).
-   - Nếu không tìm thấy: Trả về lỗi thông báo email không có trong hệ thống.
-   - Nếu tìm thấy:
-     - Tạo ngẫu nhiên mật khẩu mới (VD: `Decoco@` + 6 số/chữ ngẫu nhiên).
-     - Cập nhật mật khẩu trong Supabase Auth: `supabaseAdmin.auth.admin.updateUserById(profile.id, { password: newPassword })`.
-     - Khởi tạo client Resend với `RESEND_API_KEY`.
-     - Gửi email HTML chuyên nghiệp từ `DECOCO Analytics <no-reply@trangsucdecoco.vn>` (hoặc địa chỉ thuộc domain `trangsucdecoco.vn`) đến email người dùng với mật khẩu mới.
-4. **Cập nhật giao diện `src/app/login/page.tsx`**:
-   - Bổ sung nút/liên kết "Quên mật khẩu?" cạnh/dưới ô Mật khẩu.
-   - Xây dựng Dialog Modal "Khôi phục mật khẩu":
-     - Ô nhập Email
-     - Nút "Gửi mật khẩu mới" (kèm trạng thái loading)
-     - Nút "Hủy / Quay lại"
-     - Hiển thị thông báo lỗi hoặc thông báo thành công sau khi gửi email.
+### Phương án 1: Xây dựng RPC `get_videos_timeseries_for_period` + Component biểu đồ `TimeSeriesChart` dùng `chart.js`/`react-chartjs-2` (KHUYẾN NGHỊ ⭐)
 
-### Phương án 2: Sử dụng chức năng gửi link Reset Password mặc định của Supabase Auth
-- Sử dụng `supabase.auth.resetPasswordForEmail(email)`.
-- **Nhược điểm**: Cần cấu hình Custom SMTP server riêng trên Supabase Cloud Dashboard, không kiểm soát được template HTML email theo nhận diện thương hiệu DECOCO và không dùng trực tiếp được Resend API Key đã có sẵn trong `.env.local`.
+1. **Backend / Database Migration (`supabase/migrations/create_timeseries_rpc.sql`)**:
+   - Tạo hàm RPC `get_videos_timeseries_for_period`:
+     - Tham số nhận vào: `p_period_start`, `p_period_end`, `p_source_type`, `p_product_id`, `p_min_gmv`, `p_min_views`, `p_search`, `p_tag_ids`, `p_assigned_user_id`.
+     - Nhóm theo kỳ `period_start, period_end` (hoặc gom tuần).
+     - Trả về danh sách: `period_start`, `period_end`, `period_label`, `total_gmv`, `total_gmv_direct`, `total_gmv_indirect`, `total_orders`, `total_views`, `total_videos`.
+     - Sắp xếp theo `period_start ASC`.
+
+2. **Client Query Layer (`src/lib/queries.ts`)**:
+   - Thêm interface `TimeSeriesMetricPoint` và hàm `fetchVideosTimeSeries(params)`.
+
+3. **Xây dựng Component `src/components/TimeSeriesChart.tsx`**:
+   - Sử dụng `react-chartjs-2` / `chart.js` (kết hợp ChartJS plugins, Gradient background, Canvas tối ưu).
+   - Thiết kế giao diện Dark Mode chuẩn DECOCO (`#161b22`, border `#30363d`).
+   - Cung cấp các nút chuyển đổi nhanh (Tabs):
+     - **Doanh số (GMV)**: Biểu đồ cột/vùng hiển thị doanh thu theo tuần, kèm thẻ tính tổng và % tăng/giảm so với tuần trước.
+     - **Đơn hàng (Orders)**: Biểu đồ số lượng đơn hàng qua từng tuần.
+     - **Lượt xem (Views)**: Biểu đồ theo dõi traffic/view video qua từng tuần.
+   - Hỗ trợ đổi màu sắc chủ đạo theo từng trang (Tổng quan: Blue/Indigo, Content: Emerald, Booking: Purple).
+
+4. **Tích hợp vào 3 trang**:
+   - `src/app/(main)/dashboard/page.tsx`: Đặt biểu đồ ngay dưới Scorecards.
+   - `src/app/(main)/team/content/page.tsx`: Đặt biểu đồ phía trên Leaderboards.
+   - `src/app/(main)/team/booking/page.tsx`: Đặt biểu đồ phía trên Leaderboards.
+
+*Ưu điểm*: Tận dụng thư viện Chart.js đã có trong dự án, hiệu năng truy vấn nhanh từ DB, tính toán WoW % chính xác, giao diện mượt mà và tương thích tốt khi xuất ảnh báo cáo.
+
+---
+
+### Phương án 2: Tự render biểu đồ bằng SVG thủ công tại Client
+- Tính toán dữ liệu và vẽ các thanh bar/đường path trực tiếp bằng SVG.
+- *Nhược điểm*: Mất nhiều công sức xử lý responsive, trục tọa độ, tooltip tương tác, không tận dụng được thư viện `chart.js` đã cài sẵn.
 
 ---
 
 ## Kế hoạch Xác minh
 
-### 1. Kiểm tra Cài đặt & Build
-- Chạy `npm install resend` (hoặc kiểm tra `package.json`).
-- Kiểm tra build TypeScript thành công (`npm run build`).
+### 1. Kiểm tra Build & Lint
+- Chạy `npm run build` để kiểm tra TypeScript compilation và import Chart.js không bị lỗi SSR trong Next.js App Router.
 
-### 2. Kiểm tra Chức năng Thủ công
-- Truy cập `/login`, bấm vào "Quên mật khẩu?".
-- Thử nhập email không có trong hệ thống -> Kiểm tra báo lỗi đúng.
-- Nhập email hợp lệ có trong DB -> Kiểm tra thông báo thành công.
-- Kiểm tra hòm thư của email đăng nhập để xác nhận nhận được mail mật khẩu mới gửi từ domain `trangsucdecoco.vn`.
-- Tiến hành dùng mật khẩu mới trong email để đăng nhập lại tại `/login`.
+### 2. Kiểm thử Hiển thị & Tương tác
+- Kiểm tra trang `/dashboard`: Biểu đồ tải đúng dữ liệu các tuần, hiển thị GMV, đơn hàng, lượt xem đầy đủ.
+- Kiểm tra trang `/team/content`: Biểu đồ lọc chính xác nguồn `brand`, màu sắc Emerald chuẩn thiết kế.
+- Kiểm tra trang `/team/booking`: Biểu đồ lọc chính xác nguồn `koc`, màu sắc Purple chuẩn thiết kế.
+- Thử thay đổi DateRangePicker và các bộ lọc (tìm kiếm, sản phẩm, tag): Biểu đồ cập nhật phản hồi tương ứng theo đúng kỳ.
+- Thử rê chuột vào các điểm/cột: Tooltip hiển thị format tiền tệ VND và số liệu rõ ràng.
+- Bấm nút "Lưu báo cáo (Ảnh)": Ảnh PNG xuất ra chứa đầy đủ biểu đồ trực quan.
 
 ---
 
-## Kết quả Kiểm thử (Verification Results)
+## Kết quả Sửa lỗi & Kiểm thử (Fix & Verification Result)
 
-**Trạng thái tổng: THÀNH CÔNG ✅** (áp dụng Phương án 1 — KHUYẾN NGHỊ, thay đổi tối thiểu).
+**Kết quả: THÀNH CÔNG ✅** (áp dụng Phương án 1 — Khuyến nghị)
 
-### Các thay đổi đã áp dụng
-1. Cài `resend` (`^6.18.0`) vào `package.json`.
-2. Tạo API route mới `src/app/api/auth/forgot-password/route.ts`:
-   - Khởi tạo Supabase admin client bằng `SUPABASE_SERVICE_ROLE_KEY`.
-   - Tra cứu email trong bảng `profiles` (`is_active = true`).
-   - Sinh mật khẩu mới an toàn `Decoco@` + 6 ký tự ngẫu nhiên.
-   - `auth.admin.updateUserById(...)` để cập nhật mật khẩu.
-   - Gửi email HTML thương hiệu DECOCO qua Resend từ `DECOCO Analytics <no-reply@trangsucdecoco.vn>`.
-   - Xử lý lỗi rõ ràng khi thiếu `SUPABASE_SERVICE_ROLE_KEY` hoặc `RESEND_API_KEY`.
-3. Tạo component `src/components/ForgotPasswordDialog.tsx` (modal nhập email, trạng thái loading, thông báo lỗi/thành công) — style đồng bộ với `ChangePasswordDialog`.
-4. Cập nhật `src/app/login/page.tsx`: thêm liên kết "Quên mật khẩu?" và mount modal (truyền sẵn email đang nhập).
-5. Bổ sung `RESEND_API_KEY` vào `.env.local` (đã có key thật). **Lưu ý cần cấu hình `RESEND_API_KEY` trên Vercel để chạy production.**
+### Các thay đổi đã thực hiện (Minimal changes)
+1. **Migration mới** `supabase/migrations/create_timeseries_rpc.sql` — tạo RPC `get_videos_timeseries_for_period`, nhóm dữ liệu theo `(period_start, period_end)`, trả về `total_gmv`, `total_gmv_direct`, `total_gmv_indirect`, `total_orders`, `total_views`, `total_videos`, sắp xếp `period_start ASC`. Nhận đúng bộ tham số lọc như `get_videos_summary_for_period` (date range, source, product, min GMV/views, search, tags, assigned user).
+2. **Đã APPLY RPC lên Supabase production** (project `mrmwwlqolqsoyuxasrta` — "TikTok Video Performance") qua MCP — không chỉ commit file, để app deploy gọi RPC không bị lỗi "function not found".
+3. **`src/lib/queries.ts`** — thêm interface `TimeSeriesMetricPoint` + hàm `fetchVideosTimeSeries(params)`.
+4. **`src/components/TimeSeriesChart.tsx`** — component mới dùng `react-chartjs-2`/`chart.js`, dark theme DECOCO (`#161b22`/`#30363d`), tabs GMV/Đơn hàng/Lượt xem, tổng + % WoW so với kỳ trước, tooltip format VND, đổi màu accent theo trang.
+5. **Tích hợp 3 trang**: `/dashboard` (accent blue, dưới Scorecards), `/team/content` (accent emerald, trên Leaderboards), `/team/booking` (accent purple, trên Leaderboards). Biểu đồ dùng chung `baseParams` nên tự đồng bộ theo DateRange + bộ lọc, và nằm trong `dashboardRef` nên được đưa vào ảnh PNG khi "Lưu báo cáo".
 
-### 1. Build TypeScript — PASS
+### Kiểm thử
+
+**1. Xác minh RPC trực tiếp trên DB (script tái hiện):**
+```sql
+SELECT * FROM get_videos_timeseries_for_period(NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL) LIMIT 10;
 ```
-Running TypeScript ... Finished TypeScript in 15.8s
+Output (rút gọn) — trả về đúng chuỗi thời gian theo tuần, sắp xếp tăng dần:
+```
+2026-04-22 → 2026-05-03 | GMV 685.256.792 | orders 9.604  | views 5.957.509 | videos 6.602
+2026-05-04 → 2026-05-10 | GMV 510.183.465 | orders 6.669  | views 4.097.069 | videos 5.820
+2026-05-11 → 2026-05-17 | GMV 446.180.941 | orders 6.433  | views 3.247.121 | videos 5.979
+2026-05-18 → 2026-05-24 | GMV 400.028.526 | orders 4.960  | views 4.576.830 | videos 5.972
+... (tiếp tục theo từng tuần)
+```
+→ Dữ liệu phân rã theo kỳ chính xác, cho phép tính WoW % và vẽ biểu đồ xu hướng.
+
+**2. Build & Type-check (`npm run build`):**
+```
+✓ Compiled successfully in 25.4s
+  Finished TypeScript in 20.2s
 ✓ Generating static pages (19/19)
-Route (app): ƒ /api/auth/forgot-password  ← route mới đã đăng ký
 ```
-
-### 2. Kiểm thử API tự động (không gửi email thật để tránh reset nhầm tài khoản thật) — PASS
-```
-TEST 1 — thiếu email:
-POST /api/auth/forgot-password  {}
-→ HTTP 400  {"error":"Vui lòng nhập email."}
-
-TEST 2 — email không tồn tại:
-POST /api/auth/forgot-password  {"email":"khongtontai_xxxx@example.com"}
-→ HTTP 404  {"error":"Email không tồn tại hoặc tài khoản đã bị vô hiệu hóa."}
-```
-Xác nhận: luồng kiểm tra đầu vào + tra cứu bảng `profiles` + xử lý lỗi hoạt động đúng.
-
-### 3. Kiểm thử gửi email thật (positive case) — CHỜ XÁC MINH THỦ CÔNG
-Không chạy tự động vì thao tác này sẽ **thực sự đổi mật khẩu** của một tài khoản nội bộ thật và gửi email thật. Người dùng vui lòng làm theo mục "Kế hoạch Xác minh > 2. Kiểm tra Chức năng Thủ công" với một email nội bộ thật (yêu cầu domain `trangsucdecoco.vn` đã xác thực trên Resend).
+→ Không lỗi TypeScript, không lỗi SSR khi import Chart.js; cả `/dashboard`, `/team/content`, `/team/booking` prerender tĩnh thành công.
